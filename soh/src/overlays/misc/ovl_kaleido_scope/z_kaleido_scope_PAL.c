@@ -2533,6 +2533,17 @@ void func_808237B4(PlayState* play, Input* input) {
     }
 
     if (!cond) {
+        if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 0) != 0) {
+            // Troca de pagina instantanea: aplica o deslocamento total da camera (16 frames x 4 unidades)
+            mode = pauseCtx->mode;
+            pauseCtx->eye.x += D_8082ABAC[mode] * 16;
+            pauseCtx->eye.z += D_8082ABCC[mode] * 16;
+            pauseCtx->unk_1EA = 0;
+            pauseCtx->pageIndex = D_8082ABEC[pauseCtx->mode];
+            pauseCtx->unk_1E4 = 0;
+            return;
+        }
+
         mode = pauseCtx->mode;
         pauseCtx->eye.x += D_8082ABAC[mode];
         pauseCtx->eye.z += D_8082ABCC[mode];
