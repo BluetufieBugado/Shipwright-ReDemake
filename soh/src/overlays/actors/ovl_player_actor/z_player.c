@@ -345,6 +345,10 @@ void Player_Action_CsAction(Player* this, PlayState* play);
 #pragma region[SoH]
 u8 gWalkSpeedToggle;
 
+// Boost de corrida ativado pelo rolamento
+#define ROLL_RUN_BOOST_MULT 1.5f
+static u8 sRollRunBoost = false;
+
 // Sets a flag according to which type of flag is specified in player->pendingFlag.flagType
 // and which flag is specified in player->pendingFlag.flagID.
 void Player_SetPendingFlag(Player* this, PlayState* play) {
@@ -6308,6 +6312,7 @@ void Player_SetupRoll(Player* this, PlayState* play) {
                                    GET_PLAYER_ANIM(PLAYER_ANIMGROUP_landing_roll, this->modelAnimType),
                                    1.25f * sWaterSpeedFactor);
     gSaveContext.ship.stats.count[COUNT_ROLLS]++;
+    sRollRunBoost = true;
 }
 
 s32 Player_TryRoll(Player* this, PlayState* play) {
@@ -8386,6 +8391,8 @@ void Player_Action_Idle(Player* this, PlayState* play) {
                 return;
             }
 
+            sRollRunBoost = false;
+
             yawDiff = yawTarget - this->actor.shape.rot.y;
 
             if (ABS(yawDiff) > 800) {
@@ -8874,11 +8881,15 @@ void Player_Action_80842180(Player* this, PlayState* play) {
 
         if (!func_8083C484(this, &speedTarget, &yawTarget)) {
             if (GameInteractor_Should(VB_PLAYER_MODIFY_RUN_SPEED, true, this, &speedTarget, &yawTarget)) {
+                if (sRollRunBoost) {
+                    speedTarget *= ROLL_RUN_BOOST_MULT;
+                }
                 func_8083DF68(this, speedTarget, yawTarget);
                 func_8083DDC8(this, play);
             };
 
             if ((this->linearVelocity == 0.0f) && (speedTarget == 0.0f)) {
+                sRollRunBoost = false;
                 func_8083C0B8(this, play);
             }
         }
