@@ -21,4 +21,10 @@ The intention is not to recreate the remake entirely, but rather to incorporate 
 ❌ Music tracks are still in MIDI format and need to be replaced
 
 
+❌ A separate, dedicated jump button for the link
+
+
+❌ Pause menus redesigned to be identical to those in the Remake
+
+
 ❌ The "Ocarina via microphone" feature is not yet implemented; it is perhaps the most ambitious and labor-intensive part of the project
