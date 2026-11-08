@@ -40,6 +40,27 @@ static s16 Interface_GetTabbedPauseHudOffsetY(PlayState* play) {
     }
     return 0;
 }
+
+// Menu de pausa em abas: as rupias passam a ser desenhadas no topo direito, na barra de abas (z_kaleido_scope_PAL.c).
+// Isso so acontece se houver espaco ao lado da aba R (tela larga); em 4:3 o contador original continua embaixo.
+// Mantenha TABBED_PAUSE_RUPEE_TABS_END_X e TABBED_PAUSE_RUPEE_MIN_ROOM iguais aos do z_kaleido_scope_PAL.c.
+#define TABBED_PAUSE_RUPEE_TABS_END_X 294
+#define TABBED_PAUSE_RUPEE_MIN_ROOM 100
+
+static bool Interface_HideRupeesForTabbedPause(PlayState* play) {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0) {
+        return false;
+    }
+    s32 state = play->pauseCtx.state;
+    if (!(state == 4 || state == 5 || state == 6 || state == 0x12)) {
+        return false;
+    }
+    if (play->pauseCtx.pageIndex > PAUSE_EQUIP) {
+        return false;
+    }
+    return (OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH) - TABBED_PAUSE_RUPEE_TABS_END_X) >=
+           TABBED_PAUSE_RUPEE_MIN_ROOM;
+}
 extern MessageTableEntry* sNesMessageEntryTablePtr;
 extern MessageTableEntry* sGerMessageEntryTablePtr;
 extern MessageTableEntry* sFraMessageEntryTablePtr;
@@ -5193,7 +5214,7 @@ void Interface_Draw(PlayState* play) {
         if (fullUi) {
             s16 PosX_RC;
             s16 PosY_RC;
-            if (GameInteractor_Should(VB_RENDER_RUPEE_COUNTER, true)) {
+            if (GameInteractor_Should(VB_RENDER_RUPEE_COUNTER, true) && !Interface_HideRupeesForTabbedPause(play)) {
                 // Rupee Icon
                 if (CVarGetInteger(CVAR_ENHANCEMENT("DynamicWalletIcon"), 0)) {
                     switch (CUR_UPG_VALUE(UPG_WALLET)) {
@@ -5377,7 +5398,7 @@ void Interface_Draw(PlayState* play) {
                 }
             }
 
-            if (GameInteractor_Should(VB_RENDER_RUPEE_COUNTER, true)) {
+            if (GameInteractor_Should(VB_RENDER_RUPEE_COUNTER, true) && !Interface_HideRupeesForTabbedPause(play)) {
                 // Rupee Counter
                 gDPPipeSync(OVERLAY_DISP++);
 

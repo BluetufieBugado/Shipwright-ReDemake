@@ -1448,6 +1448,12 @@ static s16 KaleidoScope_GetItemPageShiftInfoX(PauseContext* pauseCtx) {
     return -ITEM_PAGE_SHIFT_INFO_X;
 }
 
+// Pagina de itens no menu em abas: o nome do item ja aparece no painel direito, entao o rodape original
+// (faixa azul com o nome) nao e mais desenhado.
+static bool KaleidoScope_IsTabbedItemPage(PauseContext* pauseCtx) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_ITEM;
+}
+
 void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
     static Color_RGB8 D_8082ACF4[12] = {
         { 0, 0, 0 }, { 0, 0, 0 },     { 0, 0, 0 },    { 0, 0, 0 }, { 255, 255, 0 }, { 0, 0, 0 },
@@ -2177,7 +2183,9 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, namePanelColor.r, namePanelColor.g, namePanelColor.b, namePanelColor.a);
     gSPVertex(POLY_OPA_DISP++, &pauseCtx->infoPanelVtx[0], 16, 0);
 
-    gSPDisplayList(POLY_OPA_DISP++, gItemNamePanelDL);
+    if (!KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+        gSPDisplayList(POLY_OPA_DISP++, gItemNamePanelDL);
+    }
 
     if (CVarGetInteger(CVAR_ENHANCEMENT("FixMenuLR"), 0) == 0) { // Restore the misplace gDPSetPrimColor
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 90, 100, 130, 255);
@@ -2231,8 +2239,9 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         (!pauseCtx->unk_1E4 || (pauseCtx->unk_1E4 == 2) || ((pauseCtx->unk_1E4 >= 4) && (pauseCtx->unk_1E4 <= 7)) ||
          (pauseCtx->unk_1E4 == 8)) &&
         (pauseCtx->cursorSpecialPos == 0)) {
-        if (!pauseCtx->unk_1E4 || (pauseCtx->unk_1E4 == 2) || ((pauseCtx->unk_1E4 >= 4) && (pauseCtx->unk_1E4 <= 7)) ||
-            (pauseCtx->unk_1E4 == 8)) {
+        if ((!pauseCtx->unk_1E4 || (pauseCtx->unk_1E4 == 2) || ((pauseCtx->unk_1E4 >= 4) && (pauseCtx->unk_1E4 <= 7)) ||
+             (pauseCtx->unk_1E4 == 8)) &&
+            !KaleidoScope_IsTabbedItemPage(pauseCtx)) {
             pauseCtx->infoPanelVtx[16].v.ob[0] = pauseCtx->infoPanelVtx[18].v.ob[0] = -63;
 
             pauseCtx->infoPanelVtx[17].v.ob[0] = pauseCtx->infoPanelVtx[19].v.ob[0] =
@@ -4300,7 +4309,7 @@ static void KaleidoScope_DrawTabBar(PlayState* play) {
 // Painel de detalhes do item (pagina de itens do menu em abas): icone grande, nome e quantidade.
 // Os numeros usam uma fonte de pixels de 5x7 desenhada com retangulos (sem texturas); a arte final vem depois.
 // ---------------------------------------------------------------------------------------------------------------
-static const u8 sPixelGlyphs[11][7] = {
+static const u8 sPixelGlyphs[12][7] = {
     { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E }, // 0
     { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E }, // 1
     { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F }, // 2
@@ -4312,6 +4321,7 @@ static const u8 sPixelGlyphs[11][7] = {
     { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E }, // 8
     { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C }, // 9
     { 0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10 }, // /
+    { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C }, // .
 };
 
 static void KaleidoScope_SetupFillState(PlayState* play) {
@@ -4349,6 +4359,8 @@ static void KaleidoScope_DrawPixelText(PlayState* play, const char* str, s32 x, 
             glyph = str[i] - '0';
         } else if (str[i] == '/') {
             glyph = 10;
+        } else if (str[i] == '.') {
+            glyph = 11;
         } else {
             continue;
         }
@@ -4483,6 +4495,118 @@ static void KaleidoScope_DrawItemDetailPanel(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Rupias no topo direito da barra de abas, como no remake: icone, quantidade grande e "/maximo" menor.
+// Mantenha TAB_RUPEE_MIN_ROOM igual a TABBED_PAUSE_RUPEE_MIN_ROOM do z_parameter.c (la o contador original e
+// escondido apenas quando este aqui tem espaco para aparecer).
+// ---------------------------------------------------------------------------------------------------------------
+#define TAB_RUPEE_MIN_ROOM 100
+#define TAB_RUPEE_MARGIN_R 10
+#define TAB_RUPEE_ICON_W 8
+#define TAB_RUPEE_ICON_H 14
+
+// Formata com ponto de milhar (1.000), como no remake em portugues
+static void KaleidoScope_FormatThousands(char* out, size_t size, s32 value) {
+    if (value >= 1000) {
+        snprintf(out, size, "%d.%03d", (int)(value / 1000), (int)(value % 1000));
+    } else {
+        snprintf(out, size, "%d", (int)value);
+    }
+}
+
+static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
+    static const u8 sGemHalfWidths[TAB_RUPEE_ICON_H] = { 1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 3, 2, 1 };
+    static const u8 sWalletColors[4][3] = {
+        { 200, 255, 100 }, // carteira inicial (verde)
+        { 130, 130, 255 }, // carteira do adulto (azul)
+        { 255, 100, 100 }, // carteira do gigante (vermelha)
+        { 255, 90, 255 },  // carteira do magnata (roxa)
+    };
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    s32 rightEdge = OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH);
+    s32 tabsEnd = TAB_FIRST_X + 4 * TAB_WIDTH + 22;
+    s32 rupees = (gSaveContext.rupees < 0) ? 0 : gSaveContext.rupees;
+    s32 capacity = CUR_CAPACITY(UPG_WALLET);
+    s32 wallet = CUR_UPG_VALUE(UPG_WALLET);
+    char num[12];
+    char maxStr[14];
+    s32 numW;
+    s32 maxW;
+    s32 endX = rightEdge - TAB_RUPEE_MARGIN_R;
+    s32 numX;
+    s32 maxX;
+    s32 iconX;
+    s32 iconY = (TAB_BAR_H - TAB_RUPEE_ICON_H) / 2;
+    s32 row;
+    u8 nr = 255, ng = 244, nb = 214;
+    bool showMax = true;
+
+    if (rightEdge - tabsEnd < TAB_RUPEE_MIN_ROOM) {
+        return;
+    }
+    if (wallet < 0 || wallet > 3) {
+        wallet = 0;
+    }
+
+    KaleidoScope_FormatThousands(num, sizeof(num), rupees);
+    maxStr[0] = '/';
+    KaleidoScope_FormatThousands(maxStr + 1, sizeof(maxStr) - 1, capacity);
+
+    numW = KaleidoScope_PixelTextWidth(num, 2);
+    maxW = KaleidoScope_PixelTextWidth(maxStr, 1);
+
+    maxX = endX - maxW;
+    numX = maxX - 3 - numW;
+    iconX = numX - 6 - TAB_RUPEE_ICON_W;
+    if (iconX < tabsEnd + 4) {
+        showMax = false;
+        numX = endX - numW;
+        iconX = numX - 6 - TAB_RUPEE_ICON_W;
+        if (iconX < tabsEnd + 4) {
+            return;
+        }
+    }
+
+    // Mesmas cores do HUD original: verde com a carteira cheia, cinza com zero
+    if (rupees != 0 && rupees >= capacity) {
+        nr = 120, ng = 255, nb = 0;
+    } else if (rupees == 0) {
+        nr = 150, ng = 150, nb = 150;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    KaleidoScope_SetupFillState(play);
+
+    // Icone: gema de rupia feita de retangulos (sombra preta deslocada 1 unidade + corpo + brilho)
+    for (row = 0; row < TAB_RUPEE_ICON_H; row++) {
+        s32 cx = iconX + TAB_RUPEE_ICON_W / 2;
+        s32 hw = sGemHalfWidths[row];
+        KaleidoScope_TabBarFill(play, cx - hw + 1, iconY + row + 1, cx + hw + 1, iconY + row + 2, 0, 0, 0, alpha);
+    }
+    for (row = 0; row < TAB_RUPEE_ICON_H; row++) {
+        s32 cx = iconX + TAB_RUPEE_ICON_W / 2;
+        s32 hw = sGemHalfWidths[row];
+        KaleidoScope_TabBarFill(play, cx - hw, iconY + row, cx + hw, iconY + row + 1, sWalletColors[wallet][0],
+                                sWalletColors[wallet][1], sWalletColors[wallet][2], alpha);
+    }
+    for (row = 3; row < 11; row++) {
+        s32 cx = iconX + TAB_RUPEE_ICON_W / 2;
+        KaleidoScope_TabBarFill(play, cx - 3, iconY + row, cx - 1, iconY + row + 1,
+                                (u8)((sWalletColors[wallet][0] + 255) / 2), (u8)((sWalletColors[wallet][1] + 255) / 2),
+                                (u8)((sWalletColors[wallet][2] + 255) / 2), alpha);
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    KaleidoScope_DrawPixelText(play, num, numX, (TAB_BAR_H - 14) / 2, 2, nr, ng, nb, alpha);
+    if (showMax) {
+        KaleidoScope_DrawPixelText(play, maxStr, maxX, (TAB_BAR_H - 14) / 2 + 14 - 7, 1, 170, 160, 140, alpha);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void KaleidoScope_Draw(PlayState* play) {
     Input* input = &play->state.input[0];
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -4566,6 +4690,7 @@ void KaleidoScope_Draw(PlayState* play) {
                            pauseCtx->state == 0x12) &&
             pauseCtx->pageIndex <= PAUSE_EQUIP) {
             KaleidoScope_DrawTabBar(play);
+            KaleidoScope_DrawTabBarRupees(play);
         }
 
         // Painel de detalhes do item (pagina de itens com o menu aberto)
