@@ -45,7 +45,7 @@ static s16 Interface_GetTabbedPauseHudOffsetY(PlayState* play) {
 // Isso so acontece se houver espaco ao lado da aba R (tela larga); em 4:3 o contador original continua embaixo.
 // Mantenha TABBED_PAUSE_RUPEE_TABS_END_X e TABBED_PAUSE_RUPEE_MIN_ROOM iguais aos do z_kaleido_scope_PAL.c.
 #define TABBED_PAUSE_RUPEE_TABS_END_X 294
-#define TABBED_PAUSE_RUPEE_MIN_ROOM 100
+#define TABBED_PAUSE_RUPEE_MIN_ROOM 60
 
 static bool Interface_HideRupeesForTabbedPause(PlayState* play) {
     if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0) {

@@ -4500,8 +4500,9 @@ static void KaleidoScope_DrawItemDetailPanel(PlayState* play) {
 // Mantenha TAB_RUPEE_MIN_ROOM igual a TABBED_PAUSE_RUPEE_MIN_ROOM do z_parameter.c (la o contador original e
 // escondido apenas quando este aqui tem espaco para aparecer).
 // ---------------------------------------------------------------------------------------------------------------
-#define TAB_RUPEE_MIN_ROOM 100
-#define TAB_RUPEE_MARGIN_R 10
+#define TAB_RUPEE_MIN_ROOM 60
+#define TAB_RUPEE_MARGIN_R 6
+#define TAB_RUPEE_GAP 4
 #define TAB_RUPEE_ICON_W 8
 #define TAB_RUPEE_ICON_H 14
 
@@ -4540,6 +4541,7 @@ static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
     s32 iconY = (TAB_BAR_H - TAB_RUPEE_ICON_H) / 2;
     s32 row;
     u8 nr = 255, ng = 244, nb = 214;
+    s32 numScale = 2;
     bool showMax = true;
 
     if (rightEdge - tabsEnd < TAB_RUPEE_MIN_ROOM) {
@@ -4553,18 +4555,25 @@ static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
     maxStr[0] = '/';
     KaleidoScope_FormatThousands(maxStr + 1, sizeof(maxStr) - 1, capacity);
 
-    numW = KaleidoScope_PixelTextWidth(num, 2);
+    // Tenta, em ordem: numero grande + "/maximo", so o numero grande, so o numero pequeno.
+    // Com TAB_RUPEE_MIN_ROOM garantido, a ultima opcao sempre cabe (o contador original so some se couber).
     maxW = KaleidoScope_PixelTextWidth(maxStr, 1);
-
+    numW = KaleidoScope_PixelTextWidth(num, 2);
     maxX = endX - maxW;
     numX = maxX - 3 - numW;
-    iconX = numX - 6 - TAB_RUPEE_ICON_W;
+    iconX = numX - TAB_RUPEE_GAP - TAB_RUPEE_ICON_W;
     if (iconX < tabsEnd + 4) {
         showMax = false;
         numX = endX - numW;
-        iconX = numX - 6 - TAB_RUPEE_ICON_W;
+        iconX = numX - TAB_RUPEE_GAP - TAB_RUPEE_ICON_W;
         if (iconX < tabsEnd + 4) {
-            return;
+            numScale = 1;
+            numW = KaleidoScope_PixelTextWidth(num, 1);
+            numX = endX - numW;
+            iconX = numX - TAB_RUPEE_GAP - TAB_RUPEE_ICON_W;
+            if (iconX < tabsEnd + 4) {
+                return;
+            }
         }
     }
 
@@ -4599,7 +4608,7 @@ static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
     }
     gDPPipeSync(POLY_OPA_DISP++);
 
-    KaleidoScope_DrawPixelText(play, num, numX, (TAB_BAR_H - 14) / 2, 2, nr, ng, nb, alpha);
+    KaleidoScope_DrawPixelText(play, num, numX, (TAB_BAR_H - 7 * numScale) / 2, numScale, nr, ng, nb, alpha);
     if (showMax) {
         KaleidoScope_DrawPixelText(play, maxStr, maxX, (TAB_BAR_H - 14) / 2 + 14 - 7, 1, 170, 160, 140, alpha);
     }
