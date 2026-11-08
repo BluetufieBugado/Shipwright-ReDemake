@@ -1457,6 +1457,28 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
     FrameInterpolation_RecordOpenChild(NULL, pauseCtx->state + pauseCtx->pageIndex * 100);
     OPEN_DISPS(gfxCtx);
 
+    // Com o menu em abas, a abertura/fechamento nao gira as paginas como uma tampa de notebook.
+    // Zera a rotacao e troca o deslocamento vertical por um deslize curto; o fade vem do pauseCtx->alpha.
+    // Os valores originais sao restaurados no fim da funcao, entao a logica do Update nao muda.
+    bool tabbedOpenClose = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
+                           (pauseCtx->state == 4 || pauseCtx->state == 5 || pauseCtx->state == 0x12);
+    f32 savedRot1F4 = pauseCtx->unk_1F4;
+    f32 savedRot1F8 = pauseCtx->unk_1F8;
+    f32 savedRot1FC = pauseCtx->unk_1FC;
+    f32 savedRot200 = pauseCtx->unk_200;
+    s32 savedWreg2 = WREG(2);
+
+    if (tabbedOpenClose) {
+        f32 slide = pauseCtx->unk_1F4 / 160.0f; // 1.0 = menu escondido, 0.0 = totalmente aberto
+        if (slide < 0.0f) {
+            slide = 0.0f;
+        } else if (slide > 1.0f) {
+            slide = 1.0f;
+        }
+        pauseCtx->unk_1F4 = pauseCtx->unk_1F8 = pauseCtx->unk_1FC = pauseCtx->unk_200 = 0.0f;
+        WREG(2) = (s32)(-400.0f * slide); // ate 4 unidades abaixo da posicao final (WREG(2) / 100)
+    }
+
     if ((pauseCtx->state < 8) || (pauseCtx->state > 0x11)) {
         if (pauseCtx->state != 7) {
             stepR = ABS(D_8082AB8C - D_8082ACF4[pauseCtx->cursorColorSet + D_8082AD40].r) / D_8082AD3C;
@@ -1591,7 +1613,7 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
         // Com o menu em abas, nao desenha as faces vizinhas do cubo quando o menu esta totalmente aberto
         bool hideInactivePages = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
-                                 pauseCtx->state == 6 && pauseCtx->unk_1E4 == 0;
+                                 ((pauseCtx->state == 6 && pauseCtx->unk_1E4 == 0) || tabbedOpenClose);
 
         if (pauseCtx->pageIndex && !hideInactivePages) { // pageIndex != PAUSE_ITEM
             gDPPipeSync(OVERLAY_DISP++);
@@ -1881,6 +1903,14 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
             gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 0, pauseCtx->alpha);
             gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 0);
         }
+    }
+
+    if (tabbedOpenClose) {
+        pauseCtx->unk_1F4 = savedRot1F4;
+        pauseCtx->unk_1F8 = savedRot1F8;
+        pauseCtx->unk_1FC = savedRot1FC;
+        pauseCtx->unk_200 = savedRot200;
+        WREG(2) = savedWreg2;
     }
 
     CLOSE_DISPS(gfxCtx);
