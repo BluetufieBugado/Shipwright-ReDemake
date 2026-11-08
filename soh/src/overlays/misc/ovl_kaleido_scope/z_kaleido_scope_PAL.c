@@ -1,4 +1,5 @@
 #include "z_kaleido_scope.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1421,6 +1422,32 @@ Gfx* KaleidoScope_DrawPageSections(Gfx* gfx, Vtx* vertices, void** textures) {
     return gfx;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Menu em abas, pagina de itens: a grade vai para a esquerda e o lado direito vira um painel de detalhes.
+// Constantes ajustaveis (unidades de tela, 320x240):
+//   ITEM_PAGE_SHIFT_X       deslocamento da grade para a esquerda
+//   ITEM_PAGE_SHIFT_INFO_X  o mesmo deslocamento nas coordenadas do painel de informacoes (setas L/R), que desenha
+//                           numa escala de ~0.758 em relacao a tela
+//   ITEM_DETAIL_X           borda esquerda do painel direito
+// ---------------------------------------------------------------------------------------------------------------
+#define ITEM_PAGE_SHIFT_X 64.0f
+#define ITEM_PAGE_SHIFT_INFO_X 84
+#define ITEM_DETAIL_X 236
+
+static f32 KaleidoScope_GetItemPageShiftX(PauseContext* pauseCtx) {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0 || pauseCtx->pageIndex != PAUSE_ITEM) {
+        return 0.0f;
+    }
+    return -ITEM_PAGE_SHIFT_X;
+}
+
+static s16 KaleidoScope_GetItemPageShiftInfoX(PauseContext* pauseCtx) {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0 || pauseCtx->pageIndex != PAUSE_ITEM) {
+        return 0;
+    }
+    return -ITEM_PAGE_SHIFT_INFO_X;
+}
+
 void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
     static Color_RGB8 D_8082ACF4[12] = {
         { 0, 0, 0 }, { 0, 0, 0 },     { 0, 0, 0 },    { 0, 0, 0 }, { 255, 255, 0 }, { 0, 0, 0 },
@@ -1704,7 +1731,8 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
         switch (pauseCtx->pageIndex) {
             case PAUSE_ITEM:
-                Matrix_Translate(0.0f, (f32)WREG(2) / 100.0f, -(f32)WREG(3) / 100.0f, MTXMODE_NEW);
+                Matrix_Translate(KaleidoScope_GetItemPageShiftX(pauseCtx), (f32)WREG(2) / 100.0f,
+                                 -(f32)WREG(3) / 100.0f, MTXMODE_NEW);
                 Matrix_Scale(0.78f, 0.78f, 0.78f, MTXMODE_APPLY);
                 Matrix_RotateX(-pauseCtx->unk_1F4 / 100.0f, MTXMODE_APPLY);
 
@@ -2086,8 +2114,10 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
 
     pauseCtx->infoPanelVtx[5].v.ob[0] = pauseCtx->infoPanelVtx[7].v.ob[0] = pauseCtx->infoPanelVtx[4].v.ob[0] + 72;
 
+    s16 pageArrowShift = KaleidoScope_GetItemPageShiftInfoX(pauseCtx);
+
     if ((pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT) && (pauseCtx->unk_1E4 == 0)) {
-        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = WREG(16);
+        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = (WREG(16) + pageArrowShift);
 
         pauseCtx->infoPanelVtx[9].v.ob[0] = pauseCtx->infoPanelVtx[11].v.ob[0] = pauseCtx->infoPanelVtx[8].v.ob[0] + 24;
 
@@ -2096,7 +2126,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         pauseCtx->infoPanelVtx[10].v.ob[1] = pauseCtx->infoPanelVtx[11].v.ob[1] =
             pauseCtx->infoPanelVtx[8].v.ob[1] - 32;
     } else {
-        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = WREG(16) + 3;
+        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = (WREG(16) + pageArrowShift) + 3;
 
         pauseCtx->infoPanelVtx[9].v.ob[0] = pauseCtx->infoPanelVtx[11].v.ob[0] = pauseCtx->infoPanelVtx[8].v.ob[0] + 18;
 
@@ -2107,7 +2137,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
     }
 
     if ((pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_RIGHT) && (pauseCtx->unk_1E4 == 0)) {
-        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = WREG(17);
+        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = (WREG(17) + pageArrowShift);
 
         pauseCtx->infoPanelVtx[13].v.ob[0] = pauseCtx->infoPanelVtx[15].v.ob[0] =
             pauseCtx->infoPanelVtx[12].v.ob[0] + 24;
@@ -2117,7 +2147,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         pauseCtx->infoPanelVtx[14].v.ob[1] = pauseCtx->infoPanelVtx[15].v.ob[1] =
             pauseCtx->infoPanelVtx[12].v.ob[1] - 32;
     } else {
-        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = WREG(17) + 3;
+        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = (WREG(17) + pageArrowShift) + 3;
 
         pauseCtx->infoPanelVtx[13].v.ob[0] = pauseCtx->infoPanelVtx[15].v.ob[0] =
             pauseCtx->infoPanelVtx[12].v.ob[0] + 18;
@@ -4266,6 +4296,193 @@ static void KaleidoScope_DrawTabBar(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Painel de detalhes do item (pagina de itens do menu em abas): icone grande, nome e quantidade.
+// Os numeros usam uma fonte de pixels de 5x7 desenhada com retangulos (sem texturas); a arte final vem depois.
+// ---------------------------------------------------------------------------------------------------------------
+static const u8 sPixelGlyphs[11][7] = {
+    { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E }, // 0
+    { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E }, // 1
+    { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F }, // 2
+    { 0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E }, // 3
+    { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 }, // 4
+    { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E }, // 5
+    { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E }, // 6
+    { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 }, // 7
+    { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E }, // 8
+    { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C }, // 9
+    { 0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10 }, // /
+};
+
+static void KaleidoScope_SetupFillState(PlayState* play) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_39Opa(play->state.gfxCtx);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCycleType(POLY_OPA_DISP++, G_CYC_1CYCLE);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_CLD_SURF, G_RM_CLD_SURF2);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Desenha um texto com digitos e '/' ; devolve a largura em unidades de tela
+static s32 KaleidoScope_PixelTextWidth(const char* str, s32 scale) {
+    s32 n = 0;
+    while (str[n] != '\0') {
+        n++;
+    }
+    return (n == 0) ? 0 : (n * 6 - 1) * scale;
+}
+
+static void KaleidoScope_DrawPixelText(PlayState* play, const char* str, s32 x, s32 y, s32 scale, u8 r, u8 g, u8 b,
+                                       u8 a) {
+    s32 i;
+    s32 row;
+    s32 col;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    for (i = 0; str[i] != '\0'; i++) {
+        s32 glyph;
+        if (str[i] >= '0' && str[i] <= '9') {
+            glyph = str[i] - '0';
+        } else if (str[i] == '/') {
+            glyph = 10;
+        } else {
+            continue;
+        }
+        for (row = 0; row < 7; row++) {
+            for (col = 0; col < 5; col++) {
+                if (sPixelGlyphs[glyph][row] & (0x10 >> col)) {
+                    s32 px = x + (i * 6 + col) * scale;
+                    s32 py = y + row * scale;
+                    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 0, 0, 0, a);
+                    gDPFillWideRectangle(POLY_OPA_DISP++, px + 1, py + 1, px + scale + 1, py + scale + 1);
+                    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, a);
+                    gDPFillWideRectangle(POLY_OPA_DISP++, px, py, px + scale, py + scale);
+                }
+            }
+        }
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Maximo de municao do item (0 = sem maximo para mostrar)
+static s32 KaleidoScope_GetItemMaxAmmo(u16 item) {
+    switch (item) {
+        case ITEM_STICK:
+            return CUR_CAPACITY(UPG_STICKS);
+        case ITEM_NUT:
+            return CUR_CAPACITY(UPG_NUTS);
+        case ITEM_BOMB:
+            return CUR_CAPACITY(UPG_BOMB_BAG);
+        case ITEM_BOW:
+            return CUR_CAPACITY(UPG_QUIVER);
+        case ITEM_SLINGSHOT:
+            return CUR_CAPACITY(UPG_BULLET_BAG);
+        default:
+            return 0;
+    }
+}
+
+static s32 KaleidoScope_ItemHasAmmo(u16 item) {
+    return item == ITEM_STICK || item == ITEM_NUT || item == ITEM_BOMB || item == ITEM_BOW || item == ITEM_SLINGSHOT ||
+           item == ITEM_BOMBCHU || item == ITEM_BEAN;
+}
+
+static void KaleidoScope_DrawItemDetailPanel(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    s32 rightEdge = OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH);
+    s32 panelL = ITEM_DETAIL_X;
+    s32 panelR = rightEdge - 8;
+    s32 panelT = 72;
+    s32 panelB = 230;
+    s32 panelW = panelR - panelL;
+    s32 centerX = (panelL + panelR) / 2;
+    u16 item = pauseCtx->cursorItem[PAUSE_ITEM];
+    bool hasItem = (pauseCtx->cursorSpecialPos == 0) && (pauseCtx->namedItem != PAUSE_ITEM_NONE) &&
+                   (item != PAUSE_ITEM_NONE) && (item < 0xBF);
+    s32 iconSize = (panelW >= 104) ? 88 : (panelW - 8);
+    s32 iconX = centerX - iconSize / 2;
+    s32 iconY = 80;
+    s32 nameW = (panelW - 8 < 192) ? (panelW - 8) : 192; // largura da textura do nome (128 texels) na tela
+    s32 nameH = nameW / 8;                               // 128x16 -> proporcao 8:1
+    s32 nameX = centerX - nameW / 2;
+    s32 nameY = iconY + iconSize + 8;
+    char qty[16];
+
+    if (panelW < 24) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    // Fundo do painel e borda dourada
+    KaleidoScope_SetupFillState(play);
+    KaleidoScope_TabBarFill(play, panelL, panelT, panelR, panelB, 18, 22, 36, alpha);
+    KaleidoScope_TabBarFill(play, panelL, panelT, panelR, panelT + 1, 120, 92, 52, alpha);
+    KaleidoScope_TabBarFill(play, panelL, panelB - 1, panelR, panelB, 120, 92, 52, alpha);
+    KaleidoScope_TabBarFill(play, panelL, panelT, panelL + 1, panelB, 120, 92, 52, alpha);
+    KaleidoScope_TabBarFill(play, panelR - 1, panelT, panelR, panelB, 120, 92, 52, alpha);
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    if (hasItem) {
+        // Icone grande (RGBA32 32x32 ampliado)
+        gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
+        gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, gItemIcons[item], G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                            G_TX_NOLOD, G_TX_NOLOD);
+        gSPWideTextureRectangle(POLY_OPA_DISP++, iconX << 2, iconY << 2, (iconX + iconSize) << 2,
+                                (iconY + iconSize) << 2, G_TX_RENDERTILE, 0, 0, (1 << 10) * 32 / iconSize,
+                                (1 << 10) * 32 / iconSize);
+        gDPPipeSync(POLY_OPA_DISP++);
+
+        // Nome (textura IA4 128x16 que o jogo ja carrega para o cursor)
+        gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
+                          TEXEL0, 0, PRIMITIVE, 0);
+        if (pauseCtx->nameColorSet == 1) {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 120, 120, 120, alpha);
+        } else {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 244, 214, alpha);
+        }
+        gDPLoadTextureBlock_4b(POLY_OPA_DISP++, pauseCtx->nameSegment, G_IM_FMT_IA, 128, 16, 0,
+                               G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                               G_TX_NOLOD, G_TX_NOLOD);
+        gSPWideTextureRectangle(POLY_OPA_DISP++, nameX << 2, nameY << 2, (nameX + nameW) << 2,
+                                (nameY + nameH) << 2, G_TX_RENDERTILE, 0, 0, (1 << 10) * 128 / nameW,
+                                (1 << 10) * 16 / nameH);
+        gDPPipeSync(POLY_OPA_DISP++);
+
+        // Quantidade (n/maxAmmo)
+        if (KaleidoScope_ItemHasAmmo(item)) {
+            s32 maxAmmo = KaleidoScope_GetItemMaxAmmo(item);
+            s32 w;
+            if (maxAmmo > 0) {
+                snprintf(qty, sizeof(qty), "%d/%d", (s32)AMMO(item), maxAmmo);
+            } else {
+                snprintf(qty, sizeof(qty), "%d", (s32)AMMO(item));
+            }
+            w = KaleidoScope_PixelTextWidth(qty, 3);
+            if (w > panelW - 8) {
+                w = KaleidoScope_PixelTextWidth(qty, 2);
+                KaleidoScope_SetupFillState(play);
+                KaleidoScope_DrawPixelText(play, qty, centerX - w / 2, nameY + nameH + 8, 2, 245, 240, 225, alpha);
+            } else {
+                KaleidoScope_SetupFillState(play);
+                KaleidoScope_DrawPixelText(play, qty, centerX - w / 2, nameY + nameH + 8, 3, 245, 240, 225, alpha);
+            }
+        }
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void KaleidoScope_Draw(PlayState* play) {
     Input* input = &play->state.input[0];
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -4349,6 +4566,11 @@ void KaleidoScope_Draw(PlayState* play) {
                            pauseCtx->state == 0x12) &&
             pauseCtx->pageIndex <= PAUSE_EQUIP) {
             KaleidoScope_DrawTabBar(play);
+        }
+
+        // Painel de detalhes do item (pagina de itens com o menu aberto)
+        if (tabbedMenu && pauseCtx->state == 6 && pauseCtx->pageIndex == PAUSE_ITEM) {
+            KaleidoScope_DrawItemDetailPanel(play);
         }
     }
 
