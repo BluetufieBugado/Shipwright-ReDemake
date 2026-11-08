@@ -1590,7 +1590,7 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
         }
 
         // Com o menu em abas, nao desenha as faces vizinhas do cubo quando o menu esta totalmente aberto
-        bool hideInactivePages = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 0) != 0 &&
+        bool hideInactivePages = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
                                  pauseCtx->state == 6 && pauseCtx->unk_1E4 == 0;
 
         if (pauseCtx->pageIndex && !hideInactivePages) { // pageIndex != PAUSE_ITEM
@@ -2537,7 +2537,7 @@ void func_808237B4(PlayState* play, Input* input) {
     }
 
     if (!cond) {
-        if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 0) != 0) {
+        if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0) {
             // Troca de pagina instantanea: aplica o deslocamento total da camera (16 frames x 4 unidades)
             mode = pauseCtx->mode;
             pauseCtx->eye.x += D_8082ABAC[mode] * 16;
@@ -3533,7 +3533,7 @@ void KaleidoScope_Draw(PlayState* play) {
     if (pauseCtx->debugState == 0) {
         // Com o menu em abas, a camera tem um ID de interpolacao por pagina, assim o salto de camera
         // ao trocar de pagina nao e suavizado entre os quadros interpolados (evita o 'piscar' lateral)
-        bool tabbedMenu = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 0) != 0;
+        bool tabbedMenu = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0;
         if (tabbedMenu) {
             FrameInterpolation_RecordOpenChild(NULL, 5000 + pauseCtx->pageIndex);
         }
