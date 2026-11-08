@@ -1613,7 +1613,7 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
         // Com o menu em abas, nao desenha as faces vizinhas do cubo quando o menu esta totalmente aberto
         bool hideInactivePages = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
-                                 ((pauseCtx->state == 6 && pauseCtx->unk_1E4 == 0) || tabbedOpenClose);
+                                 (pauseCtx->state == 6 || tabbedOpenClose);
 
         if (pauseCtx->pageIndex && !hideInactivePages) { // pageIndex != PAUSE_ITEM
             gDPPipeSync(OVERLAY_DISP++);
