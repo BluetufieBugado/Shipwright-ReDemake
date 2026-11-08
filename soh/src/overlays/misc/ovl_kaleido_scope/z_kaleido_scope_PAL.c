@@ -1476,7 +1476,7 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
             slide = 1.0f;
         }
         pauseCtx->unk_1F4 = pauseCtx->unk_1F8 = pauseCtx->unk_1FC = pauseCtx->unk_200 = 0.0f;
-        WREG(2) = (s32)(-400.0f * slide); // ate 4 unidades abaixo da posicao final (WREG(2) / 100)
+        WREG(2) = (s32)(400.0f * slide); // deslize de ate 4 unidades (WREG(2) / 100): comeca embaixo e sobe
     }
 
     if ((pauseCtx->state < 8) || (pauseCtx->state > 0x11)) {
@@ -3542,6 +3542,37 @@ void KaleidoScope_DrawGameOver(PlayState* play) {
     CLOSE_DISPS(gfxCtx);
 }
 
+// Simula, sem alterar o estado do menu, o fim da rotacao do cubo da abertura (ver func_808265BC).
+// Devolve a posicao final da camera e a pagina final, para o Draw mostrar so a pagina ativa durante a abertura.
+static void KaleidoScope_GetOpenFinalView(PauseContext* pauseCtx, f32* outEyeX, f32* outEyeZ, u16* outPage) {
+    f32 x = pauseCtx->eye.x;
+    f32 z = pauseCtx->eye.z;
+    u16 mode = pauseCtx->mode;
+    s32 timer = pauseCtx->unk_1EA;
+    u16 page = pauseCtx->pageIndex;
+    s32 guard = 0;
+
+    if (ZREG(46) <= 0 || ZREG(47) <= 0 || mode > 7) {
+        return;
+    }
+
+    while (guard++ < 512 && timer <= 64 * ZREG(47)) {
+        x += D_8082ABAC[mode] * ZREG(46);
+        z += D_8082ABCC[mode] * ZREG(46);
+        timer += 4 * ZREG(46);
+
+        if (timer == 64 * ZREG(47)) {
+            *outEyeX = x;
+            *outEyeZ = z;
+            *outPage = D_8082ABEC[mode];
+            return;
+        } else if (timer == 64) {
+            page = D_8082ABEC[mode];
+            mode = (u16)(page * 2) + 1;
+        }
+    }
+}
+
 void KaleidoScope_Draw(PlayState* play) {
     Input* input = &play->state.input[0];
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -3551,6 +3582,24 @@ void KaleidoScope_Draw(PlayState* play) {
 
     pauseCtx->stickRelX = input->rel.stick_x;
     pauseCtx->stickRelY = input->rel.stick_y;
+
+    // Com o menu em abas, durante a abertura desenha direto a camera e a pagina finais (sem mostrar o cubo girando).
+    // Os valores reais sao restaurados no fim da funcao, entao a logica do Update continua igual.
+    bool tabbedOpening = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
+                         (pauseCtx->state == 4 || pauseCtx->state == 5);
+    f32 savedEyeX = pauseCtx->eye.x;
+    f32 savedEyeZ = pauseCtx->eye.z;
+    u16 savedPageIndex = pauseCtx->pageIndex;
+
+    if (tabbedOpening) {
+        f32 finalEyeX = savedEyeX;
+        f32 finalEyeZ = savedEyeZ;
+        u16 finalPage = savedPageIndex;
+        KaleidoScope_GetOpenFinalView(pauseCtx, &finalEyeX, &finalEyeZ, &finalPage);
+        pauseCtx->eye.x = finalEyeX;
+        pauseCtx->eye.z = finalEyeZ;
+        pauseCtx->pageIndex = finalPage;
+    }
 
     // gSPSegment(POLY_OPA_DISP++, 0x02, interfaceCtx->parameterSegment);
     gSPSegment(POLY_OPA_DISP++, 0x07, pauseCtx->playerSegment);
@@ -3612,6 +3661,12 @@ void KaleidoScope_Draw(PlayState* play) {
     }
 
     func_800AAA50(&play->view, 15);
+
+    if (tabbedOpening) {
+        pauseCtx->eye.x = savedEyeX;
+        pauseCtx->eye.z = savedEyeZ;
+        pauseCtx->pageIndex = savedPageIndex;
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -4317,12 +4372,25 @@ void KaleidoScope_Update(PlayState* play) {
                 pauseCtx->state = 5;
             }
 
-            func_808265BC(play);
+            // Com o menu em abas o cubo nao gira na abertura: o Draw ja mostra a pagina final
+            if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0) {
+                func_808265BC(play);
+            }
             break;
 
         case 5:
             pauseCtx->alpha += (u16)(255 / (WREG(6) + WREG(4)));
-            func_808265BC(play);
+            if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0) {
+                // Espera o fade terminar e conclui a rotacao do cubo de uma vez so
+                if ((s32)pauseCtx->alpha + (s32)(255 / (WREG(6) + WREG(4))) >= 255) {
+                    s32 spinGuard = 0;
+                    while (pauseCtx->state == 5 && spinGuard++ < 256) {
+                        func_808265BC(play);
+                    }
+                }
+            } else {
+                func_808265BC(play);
+            }
             if (pauseCtx->state == 6) {
                 KaleidoScope_UpdateNamePanel(play);
             }
