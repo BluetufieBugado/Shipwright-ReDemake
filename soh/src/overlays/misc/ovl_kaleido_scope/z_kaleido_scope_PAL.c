@@ -3531,7 +3531,16 @@ void KaleidoScope_Draw(PlayState* play) {
     // gSPSegment(POLY_OPA_DISP++, 0x0D, pauseCtx->iconItemLangSegment);
 
     if (pauseCtx->debugState == 0) {
+        // Com o menu em abas, a camera tem um ID de interpolacao por pagina, assim o salto de camera
+        // ao trocar de pagina nao e suavizado entre os quadros interpolados (evita o 'piscar' lateral)
+        bool tabbedMenu = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 0) != 0;
+        if (tabbedMenu) {
+            FrameInterpolation_RecordOpenChild(NULL, 5000 + pauseCtx->pageIndex);
+        }
         KaleidoScope_SetView(pauseCtx, pauseCtx->eye.x, pauseCtx->eye.y, pauseCtx->eye.z);
+        if (tabbedMenu) {
+            FrameInterpolation_RecordCloseChild();
+        }
 
         Gfx_SetupDL_42Opa(play->state.gfxCtx);
         KaleidoScope_InitVertices(play, play->state.gfxCtx);
