@@ -3542,6 +3542,22 @@ void KaleidoScope_Draw(PlayState* play) {
             FrameInterpolation_RecordCloseChild();
         }
 
+        // Com o menu em abas, desenha um fundo escuro preenchendo a tela inteira (inclusive as bordas em widescreen)
+        // atras das paginas. O alfa acompanha o fade de abertura/fechamento do menu.
+        if (tabbedMenu && !((pauseCtx->state >= 8) && (pauseCtx->state <= 0x11))) {
+            u16 bgAlpha = (pauseCtx->alpha > 255) ? 255 : pauseCtx->alpha;
+
+            Gfx_SetupDL_39Opa(play->state.gfxCtx);
+            gDPPipeSync(POLY_OPA_DISP++);
+            gDPSetCycleType(POLY_OPA_DISP++, G_CYC_1CYCLE);
+            gDPSetRenderMode(POLY_OPA_DISP++, G_RM_CLD_SURF, G_RM_CLD_SURF2);
+            gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 10, 12, 20, bgAlpha);
+            gDPFillWideRectangle(POLY_OPA_DISP++, OTRGetRectDimensionFromLeftEdge(0), 0,
+                                 OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT);
+            gDPPipeSync(POLY_OPA_DISP++);
+        }
+
         Gfx_SetupDL_42Opa(play->state.gfxCtx);
         KaleidoScope_InitVertices(play, play->state.gfxCtx);
         KaleidoScope_DrawPages(play, play->state.gfxCtx);
