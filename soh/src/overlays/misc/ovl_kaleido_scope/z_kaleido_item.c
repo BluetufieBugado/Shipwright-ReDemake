@@ -397,6 +397,117 @@ void KaleidoScope_ResetItemCycling() {
 
 #pragma endregion
 
+// ---------------------------------------------------------------------------------------------
+// Layout do menu de itens (estilo remake). Posicao do CENTRO de cada icone, em unidades de tela
+// (320x240, X para a direita, Y para cima), relativas a grade original. Para mover um item, basta
+// mudar o par {x, y} dele. A navegacao do cursor segue estas posicoes automaticamente.
+// Colunas: -82, -46, -10, 26, 62, 98.  Linhas: 66, 32, -2, -36, -70.
+// ---------------------------------------------------------------------------------------------
+s16 gKaleidoItemSlotLayout[24][2] = {
+    // Varinhas e armas do jovem
+    [SLOT_DEKU_STICK] = { -82, 66 },
+    [SLOT_SLINGSHOT] = { -46, 66 },
+    [SLOT_MAGIC_BEAN] = { -82, 32 },
+    [SLOT_BOOMERANG] = { -46, 32 },
+    // Flechas e arco
+    [SLOT_ARROW_FIRE] = { -10, 66 },
+    [SLOT_ARROW_ICE] = { -10, 32 },
+    [SLOT_ARROW_LIGHT] = { -10, -2 },
+    [SLOT_BOW] = { 26, 32 },
+    // Martelo e gancho
+    [SLOT_HAMMER] = { 62, 66 },
+    [SLOT_HOOKSHOT] = { 62, 32 },
+    // Bombas, lente
+    [SLOT_BOMB] = { -82, -2 },
+    [SLOT_BOMBCHU] = { -46, -2 },
+    [SLOT_LENS_OF_TRUTH] = { 26, -2 },
+    // Sementes/nozes, ocarina e magias
+    [SLOT_DEKU_NUT] = { -82, -36 },
+    [SLOT_OCARINA] = { -46, -36 },
+    [SLOT_DINS_FIRE] = { -10, -36 },
+    [SLOT_FARORES_WIND] = { 26, -36 },
+    [SLOT_NAYRUS_LOVE] = { 62, -36 },
+    [SLOT_TRADE_ADULT] = { 98, -36 },
+    // Garrafas e item de troca (mascara)
+    [SLOT_BOTTLE_1] = { -82, -70 },
+    [SLOT_BOTTLE_2] = { -46, -70 },
+    [SLOT_BOTTLE_3] = { -10, -70 },
+    [SLOT_BOTTLE_4] = { 26, -70 },
+    [SLOT_TRADE_CHILD] = { 62, -70 },
+};
+
+// Acha o slot mais proximo de "from" na direcao (dx, dy). dx/dy valem -1, 0 ou 1 (dy > 0 = para cima).
+// Retorna -1 se nao houver nenhum. Slots vazios so contam se anySlot for true (opcao "PauseAnyCursor").
+static s16 KaleidoScope_FindItemSlotInDir(s16 from, s32 dx, s32 dy, bool anySlot) {
+    s16 best = -1;
+    s32 bestScore = 0x7FFFFFFF;
+    s16 i;
+
+    for (i = 0; i < 24; i++) {
+        s32 offX;
+        s32 offY;
+        s32 along;
+        s32 across;
+        s32 score;
+
+        if (i == from || (!anySlot && gSaveContext.inventory.items[i] == ITEM_NONE)) {
+            continue;
+        }
+
+        offX = gKaleidoItemSlotLayout[i][0] - gKaleidoItemSlotLayout[from][0];
+        offY = gKaleidoItemSlotLayout[i][1] - gKaleidoItemSlotLayout[from][1];
+        along = dx * offX + dy * offY;
+        across = ABS(dx != 0 ? offY : offX);
+
+        // Precisa estar realmente "na frente" e dentro de um cone de ~63 graus.
+        if (along <= 0 || across > along * 2) {
+            continue;
+        }
+
+        score = along + across * 2;
+        if (score < bestScore) {
+            bestScore = score;
+            best = i;
+        }
+    }
+
+    return best;
+}
+
+// Slot ocupado mais a esquerda (fromLeft) ou mais a direita, preferindo o de cima. Usado ao entrar na
+// grade vindo das setas de pagina.
+static s16 KaleidoScope_FindItemSlotAtEdge(bool fromLeft, bool anySlot) {
+    s16 best = -1;
+    s16 i;
+
+    for (i = 0; i < 24; i++) {
+        s16 x = gKaleidoItemSlotLayout[i][0];
+        s16 y = gKaleidoItemSlotLayout[i][1];
+
+        if (!anySlot && gSaveContext.inventory.items[i] == ITEM_NONE) {
+            continue;
+        }
+
+        if (best < 0) {
+            best = i;
+            continue;
+        }
+
+        s16 bx = gKaleidoItemSlotLayout[best][0];
+        s16 by = gKaleidoItemSlotLayout[best][1];
+        bool better = fromLeft ? (x < bx) : (x > bx);
+
+        if (x == bx && y > by) {
+            better = true;
+        }
+        if (better) {
+            best = i;
+        }
+    }
+
+    return best;
+}
+
 void KaleidoScope_DrawItemSelect(PlayState* play) {
     static s16 magicArrowEffectsR[] = { 255, 100, 255 };
     static s16 magicArrowEffectsG[] = { 0, 100, 255 };
@@ -456,70 +567,24 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                 if (gSaveContext.inventory.items[pauseCtx->cursorPoint[PAUSE_ITEM]]) {}
 
                 while (moveCursorResult == 0) {
-                    if ((pauseCtx->stickRelX < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT))) {
-                        if (pauseCtx->cursorX[PAUSE_ITEM] != 0) {
-                            pauseCtx->cursorX[PAUSE_ITEM] -= 1;
-                            pauseCtx->cursorPoint[PAUSE_ITEM] -= 1;
-                            if ((gSaveContext.inventory.items[pauseCtx->cursorPoint[PAUSE_ITEM]] != ITEM_NONE) ||
-                                pauseAnyCursor) {
-                                moveCursorResult = 1;
-                            }
-                        } else {
-                            pauseCtx->cursorX[PAUSE_ITEM] = cursorX;
-                            pauseCtx->cursorY[PAUSE_ITEM] += 1;
+                    bool goLeft =
+                        (pauseCtx->stickRelX < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT));
+                    s16 nextSlot = KaleidoScope_FindItemSlotInDir(pauseCtx->cursorPoint[PAUSE_ITEM],
+                                                                  goLeft ? -1 : 1, 0, pauseAnyCursor);
 
-                            if (pauseCtx->cursorY[PAUSE_ITEM] >= 4) {
-                                pauseCtx->cursorY[PAUSE_ITEM] = 0;
-                            }
-
-                            pauseCtx->cursorPoint[PAUSE_ITEM] =
-                                pauseCtx->cursorX[PAUSE_ITEM] + (pauseCtx->cursorY[PAUSE_ITEM] * 6);
-
-                            if (pauseCtx->cursorPoint[PAUSE_ITEM] >= 24) {
-                                pauseCtx->cursorPoint[PAUSE_ITEM] = pauseCtx->cursorX[PAUSE_ITEM];
-                            }
-
-                            if (cursorY == pauseCtx->cursorY[PAUSE_ITEM]) {
-                                pauseCtx->cursorX[PAUSE_ITEM] = cursorX;
-                                pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
-
-                                KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
-
-                                moveCursorResult = 2;
-                            }
-                        }
-                    } else if ((pauseCtx->stickRelX > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DRIGHT))) {
-                        if (pauseCtx->cursorX[PAUSE_ITEM] < 5) {
-                            pauseCtx->cursorX[PAUSE_ITEM] += 1;
-                            pauseCtx->cursorPoint[PAUSE_ITEM] += 1;
-                            if ((gSaveContext.inventory.items[pauseCtx->cursorPoint[PAUSE_ITEM]] != ITEM_NONE) ||
-                                pauseAnyCursor) {
-                                moveCursorResult = 1;
-                            }
-                        } else {
-                            pauseCtx->cursorX[PAUSE_ITEM] = cursorX;
-                            pauseCtx->cursorY[PAUSE_ITEM] += 1;
-
-                            if (pauseCtx->cursorY[PAUSE_ITEM] >= 4) {
-                                pauseCtx->cursorY[PAUSE_ITEM] = 0;
-                            }
-
-                            pauseCtx->cursorPoint[PAUSE_ITEM] =
-                                pauseCtx->cursorX[PAUSE_ITEM] + (pauseCtx->cursorY[PAUSE_ITEM] * 6);
-
-                            if (pauseCtx->cursorPoint[PAUSE_ITEM] >= 24) {
-                                pauseCtx->cursorPoint[PAUSE_ITEM] = pauseCtx->cursorX[PAUSE_ITEM];
-                            }
-
-                            if (cursorY == pauseCtx->cursorY[PAUSE_ITEM]) {
-                                pauseCtx->cursorX[PAUSE_ITEM] = cursorX;
-                                pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
-
-                                KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
-
-                                moveCursorResult = 2;
-                            }
-                        }
+                    if (nextSlot >= 0) {
+                        pauseCtx->cursorPoint[PAUSE_ITEM] = nextSlot;
+                        pauseCtx->cursorX[PAUSE_ITEM] = nextSlot % 6;
+                        pauseCtx->cursorY[PAUSE_ITEM] = nextSlot / 6;
+                        moveCursorResult = 1;
+                    } else {
+                        // Nada mais naquela direcao: passa para a aba/pagina vizinha.
+                        pauseCtx->cursorX[PAUSE_ITEM] = cursorX;
+                        pauseCtx->cursorY[PAUSE_ITEM] = cursorY;
+                        pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
+                        KaleidoScope_MoveCursorToSpecialPos(play, goLeft ? PAUSE_CURSOR_PAGE_LEFT
+                                                                         : PAUSE_CURSOR_PAGE_RIGHT);
+                        moveCursorResult = 2;
                     }
                 }
 
@@ -539,31 +604,14 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                 Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                      &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
-                cursorPoint = cursorX = cursorY = 0;
-                while (true) {
-                    if (gSaveContext.inventory.items[cursorPoint] != ITEM_NONE) {
-                        pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
-                        pauseCtx->cursorX[PAUSE_ITEM] = cursorX;
-                        pauseCtx->cursorY[PAUSE_ITEM] = cursorY;
-                        moveCursorResult = 1;
-                        break;
-                    }
-
-                    cursorY = cursorY + 1;
-                    cursorPoint = cursorPoint + 6;
-                    if (cursorY < 4) {
-                        continue;
-                    }
-
-                    cursorY = 0;
-                    cursorPoint = cursorX + 1;
-                    cursorX = cursorPoint;
-                    if (cursorX < 6) {
-                        continue;
-                    }
-
+                cursorPoint = KaleidoScope_FindItemSlotAtEdge(true, false);
+                if (cursorPoint >= 0) {
+                    pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
+                    pauseCtx->cursorX[PAUSE_ITEM] = cursorPoint % 6;
+                    pauseCtx->cursorY[PAUSE_ITEM] = cursorPoint / 6;
+                    moveCursorResult = 1;
+                } else {
                     KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
-                    break;
                 }
             }
         } else {
@@ -574,32 +622,14 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                 Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                      &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
-                cursorPoint = cursorX = 5;
-                cursorY = 0;
-                while (true) {
-                    if (gSaveContext.inventory.items[cursorPoint] != ITEM_NONE) {
-                        pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
-                        pauseCtx->cursorX[PAUSE_ITEM] = cursorX;
-                        pauseCtx->cursorY[PAUSE_ITEM] = cursorY;
-                        moveCursorResult = 1;
-                        break;
-                    }
-
-                    cursorY = cursorY + 1;
-                    cursorPoint = cursorPoint + 6;
-                    if (cursorY < 4) {
-                        continue;
-                    }
-
-                    cursorY = 0;
-                    cursorPoint = cursorX - 1;
-                    cursorX = cursorPoint;
-                    if (cursorX >= 0) {
-                        continue;
-                    }
-
+                cursorPoint = KaleidoScope_FindItemSlotAtEdge(false, false);
+                if (cursorPoint >= 0) {
+                    pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
+                    pauseCtx->cursorX[PAUSE_ITEM] = cursorPoint % 6;
+                    pauseCtx->cursorY[PAUSE_ITEM] = cursorPoint / 6;
+                    moveCursorResult = 1;
+                } else {
                     KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
-                    break;
                 }
             }
         }
@@ -613,35 +643,19 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                     cursorPoint = pauseCtx->cursorPoint[PAUSE_ITEM];
                     cursorY = pauseCtx->cursorY[PAUSE_ITEM];
                     while (moveCursorResult == 0) {
-                        if ((pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP))) {
-                            if (pauseCtx->cursorY[PAUSE_ITEM] != 0) {
-                                pauseCtx->cursorY[PAUSE_ITEM] -= 1;
-                                pauseCtx->cursorPoint[PAUSE_ITEM] -= 6;
-                                if ((gSaveContext.inventory.items[pauseCtx->cursorPoint[PAUSE_ITEM]] != ITEM_NONE) ||
-                                    pauseAnyCursor) {
-                                    moveCursorResult = 1;
-                                }
-                            } else {
-                                pauseCtx->cursorY[PAUSE_ITEM] = cursorY;
-                                pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
+                        bool goUp = (pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP));
+                        s16 nextSlot = KaleidoScope_FindItemSlotInDir(pauseCtx->cursorPoint[PAUSE_ITEM], 0,
+                                                                      goUp ? 1 : -1, pauseAnyCursor);
 
-                                moveCursorResult = 2;
-                            }
-                        } else if ((pauseCtx->stickRelY < -30) ||
-                                   (dpad && CHECK_BTN_ALL(input->press.button, BTN_DDOWN))) {
-                            if (pauseCtx->cursorY[PAUSE_ITEM] < 3) {
-                                pauseCtx->cursorY[PAUSE_ITEM] += 1;
-                                pauseCtx->cursorPoint[PAUSE_ITEM] += 6;
-                                if ((gSaveContext.inventory.items[pauseCtx->cursorPoint[PAUSE_ITEM]] != ITEM_NONE) ||
-                                    pauseAnyCursor) {
-                                    moveCursorResult = 1;
-                                }
-                            } else {
-                                pauseCtx->cursorY[PAUSE_ITEM] = cursorY;
-                                pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
-
-                                moveCursorResult = 2;
-                            }
+                        if (nextSlot >= 0) {
+                            pauseCtx->cursorPoint[PAUSE_ITEM] = nextSlot;
+                            pauseCtx->cursorX[PAUSE_ITEM] = nextSlot % 6;
+                            pauseCtx->cursorY[PAUSE_ITEM] = nextSlot / 6;
+                            moveCursorResult = 1;
+                        } else {
+                            pauseCtx->cursorY[PAUSE_ITEM] = cursorY;
+                            pauseCtx->cursorPoint[PAUSE_ITEM] = cursorPoint;
+                            moveCursorResult = 2;
                         }
                     }
 

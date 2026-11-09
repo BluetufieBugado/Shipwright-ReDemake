@@ -1434,6 +1434,9 @@ Gfx* KaleidoScope_DrawPageSections(Gfx* gfx, Vtx* vertices, void** textures) {
 // ---------------------------------------------------------------------------------------------------------------
 #define ITEM_PAGE_SHIFT_X 64.0f
 #define ITEM_PAGE_SHIFT_INFO_X 84
+
+// Tabela de posicoes dos slots do menu de itens (definida em z_kaleido_item.c).
+extern s16 gKaleidoItemSlotLayout[24][2];
 #define ITEM_DETAIL_X 236
 
 static f32 KaleidoScope_GetItemPageShiftX(PauseContext* pauseCtx) {
@@ -2205,7 +2208,9 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         }
     }
 
-    gSPDisplayList(POLY_OPA_DISP++, gLButtonIconDL);
+    if (!KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+        gSPDisplayList(POLY_OPA_DISP++, gLButtonIconDL);
+    }
 
     if (CVarGetInteger(CVAR_ENHANCEMENT("FixMenuLR"), 0) == 0) { // Restore the misplace gDPSetPrimColor
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 180, 210, 255, 255);
@@ -2219,7 +2224,9 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         }
     }
 
-    gSPDisplayList(POLY_OPA_DISP++, gRButtonIconDL);
+    if (!KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+        gSPDisplayList(POLY_OPA_DISP++, gRButtonIconDL);
+    }
 
     if (pauseCtx->cursorSpecialPos != 0) {
         j = (pauseCtx->cursorSpecialPos * 4) - 32;
@@ -3198,13 +3205,15 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
 
     for (phi_t4 = 0, phi_t2 = 0, phi_t5 = 58; phi_t4 < 4; phi_t4++, phi_t5 -= 32) {
         for (phi_t1 = -96, phi_t3 = 0; phi_t3 < 6; phi_t3++, phi_t2 += 4, phi_t1 += 32) {
-            pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 2].v.ob[0] = phi_t1 + 2;
+            // Posicao vinda da tabela de layout (z_kaleido_item.c): centro do icone -> canto superior esquerdo.
+            pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 2].v.ob[0] =
+                gKaleidoItemSlotLayout[phi_t4 * 6 + phi_t3][0] - 14;
 
             pauseCtx->itemVtx[phi_t2 + 1].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[0] =
                 pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] + 0x1C;
 
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[1] =
-                phi_t5 + pauseCtx->offsetY - 2;
+                gKaleidoItemSlotLayout[phi_t4 * 6 + phi_t3][1] + 14 + pauseCtx->offsetY;
 
             pauseCtx->itemVtx[phi_t2 + 2].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[1] =
                 pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] - 0x1C;
