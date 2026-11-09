@@ -13,7 +13,7 @@ The intention is not to recreate the remake entirely, but rather to incorporate 
 ✔ A separate, dedicated jump button for the link (technically, this already exists in SOH via the Roc's Feather item; perhaps possibilities involving this will be explored in the future)
 
 
-✔ Songs partially replaced, thanks to the "Future" tool developed by the community
+✔ Songs partially replaced, thanks to the "Future" tool developed by the community 
 
 
 ✔ Pause menus redesigned to be identical to those in the Remake (20% complete)
