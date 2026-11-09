@@ -403,37 +403,32 @@ void KaleidoScope_ResetItemCycling() {
 // mudar o par {x, y} dele. A navegacao do cursor segue estas posicoes automaticamente.
 // Colunas: -82, -46, -10, 26, 62, 98.  Linhas: 66, 32, -2, -36, -70.
 // ---------------------------------------------------------------------------------------------
+// ATENCAO: a ordem abaixo e a ordem dos SLOTs (0 a 23). Nao reordene as linhas; mude so os numeros.
 s16 gKaleidoItemSlotLayout[24][2] = {
-    // Varinhas e armas do jovem
-    [SLOT_DEKU_STICK] = { -82, 66 },
-    [SLOT_SLINGSHOT] = { -46, 66 },
-    [SLOT_MAGIC_BEAN] = { -82, 32 },
-    [SLOT_BOOMERANG] = { -46, 32 },
-    // Flechas e arco
-    [SLOT_ARROW_FIRE] = { -10, 66 },
-    [SLOT_ARROW_ICE] = { -10, 32 },
-    [SLOT_ARROW_LIGHT] = { -10, -2 },
-    [SLOT_BOW] = { 26, 32 },
-    // Martelo e gancho
-    [SLOT_HAMMER] = { 62, 66 },
-    [SLOT_HOOKSHOT] = { 62, 32 },
-    // Bombas, lente
-    [SLOT_BOMB] = { -82, -2 },
-    [SLOT_BOMBCHU] = { -46, -2 },
-    [SLOT_LENS_OF_TRUTH] = { 26, -2 },
-    // Sementes/nozes, ocarina e magias
-    [SLOT_DEKU_NUT] = { -82, -36 },
-    [SLOT_OCARINA] = { -46, -36 },
-    [SLOT_DINS_FIRE] = { -10, -36 },
-    [SLOT_FARORES_WIND] = { 26, -36 },
-    [SLOT_NAYRUS_LOVE] = { 62, -36 },
-    [SLOT_TRADE_ADULT] = { 98, -36 },
-    // Garrafas e item de troca (mascara)
-    [SLOT_BOTTLE_1] = { -82, -70 },
-    [SLOT_BOTTLE_2] = { -46, -70 },
-    [SLOT_BOTTLE_3] = { -10, -70 },
-    [SLOT_BOTTLE_4] = { 26, -70 },
-    [SLOT_TRADE_CHILD] = { 62, -70 },
+    { -82, 66 },  //  0 SLOT_DEKU_STICK
+    { -82, -36 }, //  1 SLOT_DEKU_NUT
+    { -82, -2 },  //  2 SLOT_BOMB
+    { 26, 32 },   //  3 SLOT_BOW
+    { -10, 66 },  //  4 SLOT_ARROW_FIRE
+    { -10, -36 }, //  5 SLOT_DINS_FIRE
+    { -46, 66 },  //  6 SLOT_SLINGSHOT
+    { -46, -36 }, //  7 SLOT_OCARINA
+    { -46, -2 },  //  8 SLOT_BOMBCHU
+    { 62, 32 },   //  9 SLOT_HOOKSHOT
+    { -10, 32 },  // 10 SLOT_ARROW_ICE
+    { 26, -36 },  // 11 SLOT_FARORES_WIND
+    { -46, 32 },  // 12 SLOT_BOOMERANG
+    { 26, -2 },   // 13 SLOT_LENS_OF_TRUTH
+    { -82, 32 },  // 14 SLOT_MAGIC_BEAN
+    { 62, 66 },   // 15 SLOT_HAMMER
+    { -10, -2 },  // 16 SLOT_ARROW_LIGHT
+    { 62, -36 },  // 17 SLOT_NAYRUS_LOVE
+    { -82, -70 }, // 18 SLOT_BOTTLE_1
+    { -46, -70 }, // 19 SLOT_BOTTLE_2
+    { -10, -70 }, // 20 SLOT_BOTTLE_3
+    { 26, -70 },  // 21 SLOT_BOTTLE_4
+    { 98, -36 },  // 22 SLOT_TRADE_ADULT
+    { 62, -70 },  // 23 SLOT_TRADE_CHILD
 };
 
 // Acha o slot mais proximo de "from" na direcao (dx, dy). dx/dy valem -1, 0 ou 1 (dy > 0 = para cima).
