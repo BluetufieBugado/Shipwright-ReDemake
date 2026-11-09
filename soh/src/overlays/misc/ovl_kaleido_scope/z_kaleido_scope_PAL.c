@@ -13,6 +13,7 @@
 #include "textures/icon_item_gameover_static/icon_item_gameover_static.h"
 #include "textures/map_name_static/map_name_static.h"
 #include "textures/map_48x85_static/map_48x85_static.h"
+#include "textures/parameter_static/parameter_static.h"
 #include "vt.h"
 
 #include <libultraship/bridge/resourcebridge.h>
@@ -4503,8 +4504,8 @@ static void KaleidoScope_DrawItemDetailPanel(PlayState* play) {
 #define TAB_RUPEE_MIN_ROOM 60
 #define TAB_RUPEE_MARGIN_R 6
 #define TAB_RUPEE_GAP 4
-#define TAB_RUPEE_ICON_W 8
-#define TAB_RUPEE_ICON_H 14
+#define TAB_RUPEE_ICON_W 16
+#define TAB_RUPEE_ICON_H 16
 
 // Formata com ponto de milhar (1.000), como no remake em portugues
 static void KaleidoScope_FormatThousands(char* out, size_t size, s32 value) {
@@ -4516,7 +4517,6 @@ static void KaleidoScope_FormatThousands(char* out, size_t size, s32 value) {
 }
 
 static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
-    static const u8 sGemHalfWidths[TAB_RUPEE_ICON_H] = { 1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 3, 2, 1 };
     static const u8 sWalletColors[4][3] = {
         { 200, 255, 100 }, // carteira inicial (verde)
         { 130, 130, 255 }, // carteira do adulto (azul)
@@ -4539,7 +4539,6 @@ static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
     s32 maxX;
     s32 iconX;
     s32 iconY = (TAB_BAR_H - TAB_RUPEE_ICON_H) / 2;
-    s32 row;
     u8 nr = 255, ng = 244, nb = 214;
     s32 numScale = 2;
     bool showMax = true;
@@ -4588,25 +4587,22 @@ static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
 
     KaleidoScope_SetupFillState(play);
 
-    // Icone: gema de rupia feita de retangulos (sombra preta deslocada 1 unidade + corpo + brilho)
-    for (row = 0; row < TAB_RUPEE_ICON_H; row++) {
-        s32 cx = iconX + TAB_RUPEE_ICON_W / 2;
-        s32 hw = sGemHalfWidths[row];
-        KaleidoScope_TabBarFill(play, cx - hw + 1, iconY + row + 1, cx + hw + 1, iconY + row + 2, 0, 0, 0, alpha);
-    }
-    for (row = 0; row < TAB_RUPEE_ICON_H; row++) {
-        s32 cx = iconX + TAB_RUPEE_ICON_W / 2;
-        s32 hw = sGemHalfWidths[row];
-        KaleidoScope_TabBarFill(play, cx - hw, iconY + row, cx + hw, iconY + row + 1, sWalletColors[wallet][0],
-                                sWalletColors[wallet][1], sWalletColors[wallet][2], alpha);
-    }
-    for (row = 3; row < 11; row++) {
-        s32 cx = iconX + TAB_RUPEE_ICON_W / 2;
-        KaleidoScope_TabBarFill(play, cx - 3, iconY + row, cx - 1, iconY + row + 1,
-                                (u8)((sWalletColors[wallet][0] + 255) / 2), (u8)((sWalletColors[wallet][1] + 255) / 2),
-                                (u8)((sWalletColors[wallet][2] + 255) / 2), alpha);
-    }
+    // Icone: textura original da rupia do HUD (IA8 16x16), tingida com a cor da carteira
     gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
+                      TEXEL0, 0, PRIMITIVE, 0);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, sWalletColors[wallet][0], sWalletColors[wallet][1],
+                    sWalletColors[wallet][2], alpha);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, gRupeeCounterIconTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 16, 0,
+                        G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
+                        G_TX_NOLOD, G_TX_NOLOD);
+    gSPWideTextureRectangle(POLY_OPA_DISP++, iconX << 2, iconY << 2, (iconX + TAB_RUPEE_ICON_W) << 2,
+                            (iconY + TAB_RUPEE_ICON_H) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    // Volta ao estado de retangulos preenchidos para os numeros
+    KaleidoScope_SetupFillState(play);
 
     KaleidoScope_DrawPixelText(play, num, numX, (TAB_BAR_H - 7 * numScale) / 2, numScale, nr, ng, nb, alpha);
     if (showMax) {
