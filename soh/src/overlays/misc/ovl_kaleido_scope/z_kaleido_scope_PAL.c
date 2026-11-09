@@ -1438,6 +1438,8 @@ Gfx* KaleidoScope_DrawPageSections(Gfx* gfx, Vtx* vertices, void** textures) {
 // Tabela de posicoes dos slots do menu de itens (definida em z_kaleido_item.c).
 extern s16 gKaleidoItemSlotLayout[24][2];
 extern s16 KaleidoScope_GetItemSlotIconSize(s16 slot);
+extern s16 KaleidoScope_GetItemSlotFrameRight(s16 slot);
+extern s16 KaleidoScope_GetItemSlotFrameBottom(s16 slot);
 #define ITEM_DETAIL_X 236
 
 static f32 KaleidoScope_GetItemPageShiftX(PauseContext* pauseCtx) {
@@ -3308,13 +3310,13 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
         phi_t4 = gBetterAmmoRendering ? D_8082B11C_all[phi_t3] : D_8082B11C[phi_t3];
 
         pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 2].v.ob[0] =
-            pauseCtx->itemVtx[phi_t4 + 1].v.ob[0] - 14;
+            KaleidoScope_GetItemSlotFrameRight(phi_t4 >> 2) - 16;
 
         pauseCtx->itemVtx[phi_t2 + 1].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[0] =
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] + 8;
 
         pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[1] =
-            pauseCtx->itemVtx[phi_t4 + 2].v.ob[1] + 6;
+            KaleidoScope_GetItemSlotFrameBottom(phi_t4 >> 2) + 10 + pauseCtx->offsetY;
 
         pauseCtx->itemVtx[phi_t2 + 2].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[1] =
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] - 8;

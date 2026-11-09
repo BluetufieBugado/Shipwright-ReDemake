@@ -398,37 +398,42 @@ void KaleidoScope_ResetItemCycling() {
 #pragma endregion
 
 // ---------------------------------------------------------------------------------------------
-// Layout do menu de itens (estilo remake). Posicao do CENTRO de cada icone, em unidades de tela
-// (320x240, X para a direita, Y para cima), relativas a grade original. Para mover um item, basta
-// mudar o par {x, y} dele. A navegacao do cursor segue estas posicoes automaticamente.
-// Colunas: -82, -46, -10, 26, 62, 98.  Linhas: 66, 32, -2, -36, -70.
+// Layout do menu de itens (estilo remake). Posicao do CENTRO de cada slot, em unidades de tela
+// (320x240, X para a direita, Y para cima). Cada slot tem um retangulo proprio, sem sobrepor os
+// vizinhos; o tamanho de cada um fica em sSlotStyle (mais abaixo). A navegacao do cursor segue
+// estas posicoes automaticamente.
+//
+// Grade base: celulas de 32x32 (moldura de 30 + 2 de folga).
+//   Colunas (centro): -88, -56, -24, 8, 40, 72, 104      Linhas (centro): 47, 15, -17, -49, -81
+// Itens grandes ocupam varias celulas: arco = colunas 3-4 x linhas 0-1, martelo = colunas 5-6 x
+// linhas 0-1, gancho = colunas 5-6 x linhas 2-3, vara = coluna 0 x linhas 0-1.
 // ---------------------------------------------------------------------------------------------
 // ATENCAO: a ordem abaixo e a ordem dos SLOTs (0 a 23). Nao reordene as linhas; mude so os numeros.
 s16 gKaleidoItemSlotLayout[24][2] = {
-    { -82, 66 },  //  0 SLOT_DEKU_STICK
-    { -82, -36 }, //  1 SLOT_DEKU_NUT
-    { -82, -2 },  //  2 SLOT_BOMB
-    { 26, 32 },   //  3 SLOT_BOW
-    { -10, 66 },  //  4 SLOT_ARROW_FIRE
-    { -10, -36 }, //  5 SLOT_DINS_FIRE
-    { -46, 66 },  //  6 SLOT_SLINGSHOT
-    { -46, -36 }, //  7 SLOT_OCARINA
-    { -46, -2 },  //  8 SLOT_BOMBCHU
-    { 62, 32 },   //  9 SLOT_HOOKSHOT
-    { -10, 32 },  // 10 SLOT_ARROW_ICE
-    { 26, -36 },  // 11 SLOT_FARORES_WIND
-    { -46, 32 },  // 12 SLOT_BOOMERANG
-    { 26, -2 },   // 13 SLOT_LENS_OF_TRUTH
-    { -82, 32 },  // 14 SLOT_MAGIC_BEAN
-    { 62, 66 },   // 15 SLOT_HAMMER
-    { -10, -2 },  // 16 SLOT_ARROW_LIGHT
-    { 62, -36 },  // 17 SLOT_NAYRUS_LOVE
-    { -82, -70 }, // 18 SLOT_BOTTLE_1
-    { -46, -70 }, // 19 SLOT_BOTTLE_2
-    { -10, -70 }, // 20 SLOT_BOTTLE_3
-    { 26, -70 },  // 21 SLOT_BOTTLE_4
-    { 98, -36 },  // 22 SLOT_TRADE_ADULT
-    { 62, -70 },  // 23 SLOT_TRADE_CHILD
+    { -88, 31 },  //  0 SLOT_DEKU_STICK (alto, 2 linhas)
+    { -56, -49 }, //  1 SLOT_DEKU_NUT
+    { -88, -49 }, //  2 SLOT_BOMB
+    { 24, 31 },   //  3 SLOT_BOW (grande, 2x2)
+    { -24, 47 },  //  4 SLOT_ARROW_FIRE
+    { -24, -49 }, //  5 SLOT_DINS_FIRE
+    { -56, 47 },  //  6 SLOT_SLINGSHOT
+    { 40, -17 },  //  7 SLOT_OCARINA
+    { -56, -17 }, //  8 SLOT_BOMBCHU
+    { 88, -33 },  //  9 SLOT_HOOKSHOT (grande, 2 colunas)
+    { -24, 15 },  // 10 SLOT_ARROW_ICE
+    { 8, -49 },   // 11 SLOT_FARORES_WIND
+    { -56, 15 },  // 12 SLOT_BOOMERANG
+    { 8, -17 },   // 13 SLOT_LENS_OF_TRUTH
+    { -88, -17 }, // 14 SLOT_MAGIC_BEAN
+    { 88, 31 },   // 15 SLOT_HAMMER (gigante, 2x2)
+    { -24, -17 }, // 16 SLOT_ARROW_LIGHT
+    { 40, -49 },  // 17 SLOT_NAYRUS_LOVE
+    { -88, -81 }, // 18 SLOT_BOTTLE_1
+    { -56, -81 }, // 19 SLOT_BOTTLE_2
+    { -24, -81 }, // 20 SLOT_BOTTLE_3
+    { 8, -81 },   // 21 SLOT_BOTTLE_4
+    { 40, -81 },  // 22 SLOT_TRADE_ADULT
+    { 72, -81 },  // 23 SLOT_TRADE_CHILD
 };
 
 // Acha o slot mais proximo de "from" na direcao (dx, dy). dx/dy valem -1, 0 ou 1 (dy > 0 = para cima).
@@ -507,8 +512,9 @@ static s16 KaleidoScope_FindItemSlotAtEdge(bool fromLeft, bool anySlot) {
 // Estilo de cada slot (mesma ordem dos SLOTs, 0 a 23). Nao reordene; mude so os numeros.
 //   icon = tamanho do icone, fw/fh = largura/altura da moldura,
 //   cx/cy = quanto os cantos sao cortados (cx = fw/2 ou cy = fh/2 faz um hexagono).
-// Use numeros PARES. Slots vizinhos ficam a ~34-36 unidades de distancia, entao molduras
-// maiores que isso se sobrepoem.
+// Use numeros PARES. A posicao de cada slot esta em gKaleidoItemSlotLayout; a moldura precisa
+// caber na area do slot (celulas de 32, 30 de moldura) para nao sobrepor os vizinhos.
+// O icone deve ser no maximo 2 unidades menor que o menor lado da moldura.
 // ---------------------------------------------------------------------------------------------
 typedef struct {
     s16 icon;
@@ -518,29 +524,32 @@ typedef struct {
     s16 cy;
 } KaleidoSlotStyle;
 
-#define STYLE_NORMAL { 28, 32, 32, 6, 6 }
-// Hexagono com pontas em cima e embaixo. Para pontas nos lados, troque por { 28, 36, 34, 9, 17 }
-#define STYLE_HEX { 28, 34, 36, 17, 9 }
-#define STYLE_BIG { 34, 36, 36, 7, 7 }
+#define STYLE_NORMAL { 26, 30, 30, 6, 6 }
+// Hexagono com pontas em cima e embaixo. Para pontas nos lados, troque por { 26, 30, 30, 8, 15 }
+#define STYLE_HEX { 26, 30, 30, 15, 8 }
+// Flechas magicas: icone e moldura menores
+#define STYLE_ARROW { 22, 30, 26, 6, 6 }
+// Itens grandes (arco, martelo): ocupam 2x2 celulas
+#define STYLE_HUGE { 54, 62, 62, 10, 10 }
 
 static const KaleidoSlotStyle sSlotStyle[24] = {
-    STYLE_NORMAL,             //  0 SLOT_DEKU_STICK
+    { 28, 30, 62, 8, 8 },     //  0 SLOT_DEKU_STICK (alto)
     STYLE_HEX,                //  1 SLOT_DEKU_NUT
     STYLE_NORMAL,             //  2 SLOT_BOMB
-    { 40, 44, 44, 8, 8 },     //  3 SLOT_BOW (grande)
-    STYLE_NORMAL,             //  4 SLOT_ARROW_FIRE
+    STYLE_HUGE,               //  3 SLOT_BOW
+    STYLE_ARROW,              //  4 SLOT_ARROW_FIRE
     STYLE_HEX,                //  5 SLOT_DINS_FIRE
     STYLE_NORMAL,             //  6 SLOT_SLINGSHOT
     STYLE_NORMAL,             //  7 SLOT_OCARINA
     STYLE_NORMAL,             //  8 SLOT_BOMBCHU
-    STYLE_BIG,                //  9 SLOT_HOOKSHOT
-    STYLE_NORMAL,             // 10 SLOT_ARROW_ICE
+    { 44, 62, 50, 9, 9 },     //  9 SLOT_HOOKSHOT (largo)
+    STYLE_ARROW,              // 10 SLOT_ARROW_ICE
     STYLE_HEX,                // 11 SLOT_FARORES_WIND
     STYLE_NORMAL,             // 12 SLOT_BOOMERANG
     STYLE_NORMAL,             // 13 SLOT_LENS_OF_TRUTH
     STYLE_HEX,                // 14 SLOT_MAGIC_BEAN
-    STYLE_BIG,                // 15 SLOT_HAMMER
-    STYLE_NORMAL,             // 16 SLOT_ARROW_LIGHT
+    STYLE_HUGE,               // 15 SLOT_HAMMER
+    STYLE_ARROW,              // 16 SLOT_ARROW_LIGHT
     STYLE_HEX,                // 17 SLOT_NAYRUS_LOVE
     STYLE_NORMAL,             // 18 SLOT_BOTTLE_1
     STYLE_NORMAL,             // 19 SLOT_BOTTLE_2
@@ -558,6 +567,16 @@ static const KaleidoSlotStyle sSlotStyle[24] = {
 // Usado pelo z_kaleido_scope_PAL.c ao montar os vertices
 s16 KaleidoScope_GetItemSlotIconSize(s16 slot) {
     return sSlotStyle[slot].icon;
+}
+
+// Canto inferior direito da moldura do slot (sem o deslocamento da pagina). Usado para posicionar a
+// quantidade de municao no z_kaleido_scope_PAL.c.
+s16 KaleidoScope_GetItemSlotFrameRight(s16 slot) {
+    return gKaleidoItemSlotLayout[slot][0] + sSlotStyle[slot].fw / 2;
+}
+
+s16 KaleidoScope_GetItemSlotFrameBottom(s16 slot) {
+    return gKaleidoItemSlotLayout[slot][1] - sSlotStyle[slot].fh / 2;
 }
 
 // Cresce o quadrado do slot em 2 unidades por lado (efeito do slot selecionado)
