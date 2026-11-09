@@ -6,7 +6,17 @@ The intention is not to recreate the remake entirely, but rather to incorporate 
 
 ## What is currently working?
 
+
 ✔ Faster movement speed after rolling
+
+
+✔ A separate, dedicated jump button for the link (technically, this already exists in SOH via the Roc's Feather item; perhaps possibilities involving this will be explored in the future)
+
+
+✔ Songs partially replaced, thanks to the "Future" tool developed by the community
+
+
+✔ Pause menus redesigned to be identical to those in the Remake (20% complete)
 
 
 ❌ Smoother controls
@@ -16,15 +26,6 @@ The intention is not to recreate the remake entirely, but rather to incorporate 
 
 
 ❌ Maps and environments remain identical to the original game and require reworking
-
-
-❌ Music tracks are still in MIDI format and need to be replaced
-
-
-❌ A separate, dedicated jump button for the link
-
-
-❌ Pause menus redesigned to be identical to those in the Remake
 
 
 ❌ The "Ocarina via microphone" feature is not yet implemented; it is perhaps the most ambitious and labor-intensive part of the project
