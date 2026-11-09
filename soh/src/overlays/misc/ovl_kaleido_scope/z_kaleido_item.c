@@ -503,6 +503,170 @@ static s16 KaleidoScope_FindItemSlotAtEdge(bool fromLeft, bool anySlot) {
     return best;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Estilo de cada slot (mesma ordem dos SLOTs, 0 a 23). Nao reordene; mude so os numeros.
+//   icon = tamanho do icone, fw/fh = largura/altura da moldura,
+//   cx/cy = quanto os cantos sao cortados (cx = fw/2 ou cy = fh/2 faz um hexagono).
+// Use numeros PARES. Slots vizinhos ficam a ~34-36 unidades de distancia, entao molduras
+// maiores que isso se sobrepoem.
+// ---------------------------------------------------------------------------------------------
+typedef struct {
+    s16 icon;
+    s16 fw;
+    s16 fh;
+    s16 cx;
+    s16 cy;
+} KaleidoSlotStyle;
+
+#define STYLE_NORMAL { 28, 32, 32, 6, 6 }
+// Hexagono com pontas em cima e embaixo. Para pontas nos lados, troque por { 28, 36, 34, 9, 17 }
+#define STYLE_HEX { 28, 34, 36, 17, 9 }
+#define STYLE_BIG { 34, 36, 36, 7, 7 }
+
+static const KaleidoSlotStyle sSlotStyle[24] = {
+    STYLE_NORMAL,             //  0 SLOT_DEKU_STICK
+    STYLE_HEX,                //  1 SLOT_DEKU_NUT
+    STYLE_NORMAL,             //  2 SLOT_BOMB
+    { 40, 44, 44, 8, 8 },     //  3 SLOT_BOW (grande)
+    STYLE_NORMAL,             //  4 SLOT_ARROW_FIRE
+    STYLE_HEX,                //  5 SLOT_DINS_FIRE
+    STYLE_NORMAL,             //  6 SLOT_SLINGSHOT
+    STYLE_NORMAL,             //  7 SLOT_OCARINA
+    STYLE_NORMAL,             //  8 SLOT_BOMBCHU
+    STYLE_BIG,                //  9 SLOT_HOOKSHOT
+    STYLE_NORMAL,             // 10 SLOT_ARROW_ICE
+    STYLE_HEX,                // 11 SLOT_FARORES_WIND
+    STYLE_NORMAL,             // 12 SLOT_BOOMERANG
+    STYLE_NORMAL,             // 13 SLOT_LENS_OF_TRUTH
+    STYLE_HEX,                // 14 SLOT_MAGIC_BEAN
+    STYLE_BIG,                // 15 SLOT_HAMMER
+    STYLE_NORMAL,             // 16 SLOT_ARROW_LIGHT
+    STYLE_HEX,                // 17 SLOT_NAYRUS_LOVE
+    STYLE_NORMAL,             // 18 SLOT_BOTTLE_1
+    STYLE_NORMAL,             // 19 SLOT_BOTTLE_2
+    STYLE_NORMAL,             // 20 SLOT_BOTTLE_3
+    STYLE_NORMAL,             // 21 SLOT_BOTTLE_4
+    STYLE_NORMAL,             // 22 SLOT_TRADE_ADULT
+    STYLE_NORMAL,             // 23 SLOT_TRADE_CHILD
+};
+
+// 1 = desenha moldura tambem nos slots vazios (como o remake faz com os frascos), 0 = so onde ha item
+#define KALEIDO_DRAW_EMPTY_FRAMES 0
+// 1 = a moldura dourada substitui o cursor de cantos amarelos no menu em abas
+#define KALEIDO_FRAME_AS_CURSOR 1
+
+// Usado pelo z_kaleido_scope_PAL.c ao montar os vertices
+s16 KaleidoScope_GetItemSlotIconSize(s16 slot) {
+    return sSlotStyle[slot].icon;
+}
+
+// Cresce o quadrado do slot em 2 unidades por lado (efeito do slot selecionado)
+static void KaleidoScope_GrowSlotVtx(Vtx* v) {
+    s16 w = v[1].v.ob[0] - v[0].v.ob[0];
+    s16 h = v[0].v.ob[1] - v[2].v.ob[1];
+
+    v[0].v.ob[0] = v[2].v.ob[0] = v[0].v.ob[0] - 2;
+    v[1].v.ob[0] = v[3].v.ob[0] = v[0].v.ob[0] + w + 4;
+    v[0].v.ob[1] = v[1].v.ob[1] = v[0].v.ob[1] + 2;
+    v[2].v.ob[1] = v[3].v.ob[1] = v[0].v.ob[1] - h - 4;
+}
+
+// Poligono de 8 pontos (retangulo com cantos cortados). Com cx = W ou cy = H vira hexagono.
+static void KaleidoScope_SetPolyVtx(Vtx* v, s32 cx, s32 cy, s32 W, s32 H, s32 X, s32 Y) {
+    s32 px[8] = { cx - W + X, cx + W - X, cx + W, cx + W, cx + W - X, cx - W + X, cx - W, cx - W };
+    s32 py[8] = { cy + H, cy + H, cy + H - Y, cy - H + Y, cy - H, cy - H, cy - H + Y, cy + H - Y };
+    s32 k;
+
+    for (k = 0; k < 8; k++) {
+        v[k].v.ob[0] = px[k];
+        v[k].v.ob[1] = py[k];
+        v[k].v.ob[2] = 0;
+        v[k].v.flag = 0;
+        v[k].v.tc[0] = v[k].v.tc[1] = 0;
+        v[k].v.cn[0] = v[k].v.cn[1] = v[k].v.cn[2] = v[k].v.cn[3] = 255;
+    }
+}
+
+static void KaleidoScope_DrawPoly(Gfx** dl, Vtx* v) {
+    s32 k;
+
+    gSPVertex((*dl)++, v, 8, 0);
+    for (k = 1; k < 7; k++) {
+        gSP1Triangle((*dl)++, 0, k, k + 1, 0);
+    }
+}
+
+// Desenha a moldura de cada slot (borda + miolo) antes dos icones
+static void KaleidoScope_DrawItemFrames(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    GraphicsContext* gfxCtx = play->state.gfxCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    bool cursorOn = (pauseCtx->state == 6) && (pauseCtx->cursorSpecialPos == 0) &&
+                    (pauseCtx->unk_1E4 == 0 || pauseCtx->unk_1E4 == 8);
+    s16 selected = pauseCtx->cursorSlot[PAUSE_ITEM];
+    Vtx* vtx = (Vtx*)Graph_Alloc(gfxCtx, 24 * 16 * sizeof(Vtx));
+    s16 i;
+
+    OPEN_DISPS(gfxCtx);
+
+    Gfx_SetupDL_39Opa(gfxCtx);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCycleType(POLY_OPA_DISP++, G_CYC_1CYCLE);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_CLD_SURF, G_RM_CLD_SURF2);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+
+    for (i = 0; i < 24; i++) {
+        const KaleidoSlotStyle* st = &sSlotStyle[i];
+        bool hasItem = gSaveContext.inventory.items[i] != ITEM_NONE;
+        bool isSel = cursorOn && (i == selected);
+        s32 grow = (isSel && CHECK_AGE_REQ_SLOT(i)) ? 2 : 0;
+        s32 b = isSel ? 2 : 1;
+        s32 W = st->fw / 2 + grow;
+        s32 H = st->fh / 2 + grow;
+        s32 X = st->cx;
+        s32 Y = st->cy;
+        s32 iW = W - b;
+        s32 iH = H - b;
+        s32 iX = (X > iW) ? iW : X;
+        s32 iY = (Y > iH) ? iH : Y;
+        s32 cx = gKaleidoItemSlotLayout[i][0];
+        s32 cy = gKaleidoItemSlotLayout[i][1] + pauseCtx->offsetY;
+        Vtx* v = vtx + i * 16;
+
+        if (!hasItem && !isSel && !KALEIDO_DRAW_EMPTY_FRAMES) {
+            continue;
+        }
+
+        KaleidoScope_SetPolyVtx(v, cx, cy, W, H, X, Y);
+        KaleidoScope_SetPolyVtx(v + 8, cx, cy, iW, iH, iX, iY);
+
+        // Borda
+        gDPPipeSync(POLY_OPA_DISP++);
+        if (isSel) {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 250, 230, alpha);
+        } else {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 96, 76, 50, alpha);
+        }
+        KaleidoScope_DrawPoly(&POLY_OPA_DISP, v);
+
+        // Miolo
+        gDPPipeSync(POLY_OPA_DISP++);
+        if (isSel) {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 176, 128, 24, alpha);
+        } else {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 22, 17, 13, alpha);
+        }
+        KaleidoScope_DrawPoly(&POLY_OPA_DISP, v + 8);
+    }
+
+    // Volta ao estado que o resto da pagina espera
+    gDPPipeSync(POLY_OPA_DISP++);
+    Gfx_SetupDL_42Opa(gfxCtx);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+
+    CLOSE_DISPS(gfxCtx);
+}
+
 void KaleidoScope_DrawItemSelect(PlayState* play) {
     static s16 magicArrowEffectsR[] = { 255, 100, 255 };
     static s16 magicArrowEffectsG[] = { 0, 100, 255 };
@@ -724,6 +888,10 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
         pauseCtx->cursorColorSet = 4;
     }
 
+    if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0) {
+        KaleidoScope_DrawItemFrames(play);
+    }
+
     gDPSetCombineLERP(OVERLAY_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0, PRIMITIVE,
                       ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0);
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
@@ -752,29 +920,9 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                                         magicArrowEffectsG[pauseCtx->equipTargetItem - 0xBF],
                                         magicArrowEffectsB[pauseCtx->equipTargetItem - 0xBF], pauseCtx->alpha);
 
-                        pauseCtx->itemVtx[j + 0].v.ob[0] = pauseCtx->itemVtx[j + 2].v.ob[0] =
-                            pauseCtx->itemVtx[j + 0].v.ob[0] - 2;
-
-                        pauseCtx->itemVtx[j + 1].v.ob[0] = pauseCtx->itemVtx[j + 3].v.ob[0] =
-                            pauseCtx->itemVtx[j + 0].v.ob[0] + 32;
-
-                        pauseCtx->itemVtx[j + 0].v.ob[1] = pauseCtx->itemVtx[j + 1].v.ob[1] =
-                            pauseCtx->itemVtx[j + 0].v.ob[1] + 2;
-
-                        pauseCtx->itemVtx[j + 2].v.ob[1] = pauseCtx->itemVtx[j + 3].v.ob[1] =
-                            pauseCtx->itemVtx[j + 0].v.ob[1] - 32;
+                        KaleidoScope_GrowSlotVtx(&pauseCtx->itemVtx[j]);
                     } else if (i == cursorSlot) {
-                        pauseCtx->itemVtx[j + 0].v.ob[0] = pauseCtx->itemVtx[j + 2].v.ob[0] =
-                            pauseCtx->itemVtx[j + 0].v.ob[0] - 2;
-
-                        pauseCtx->itemVtx[j + 1].v.ob[0] = pauseCtx->itemVtx[j + 3].v.ob[0] =
-                            pauseCtx->itemVtx[j + 0].v.ob[0] + 32;
-
-                        pauseCtx->itemVtx[j + 0].v.ob[1] = pauseCtx->itemVtx[j + 1].v.ob[1] =
-                            pauseCtx->itemVtx[j + 0].v.ob[1] + 2;
-
-                        pauseCtx->itemVtx[j + 2].v.ob[1] = pauseCtx->itemVtx[j + 3].v.ob[1] =
-                            pauseCtx->itemVtx[j + 0].v.ob[1] - 32;
+                        KaleidoScope_GrowSlotVtx(&pauseCtx->itemVtx[j]);
                     }
                 }
             }
@@ -791,7 +939,8 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
         }
     }
 
-    if (pauseCtx->cursorSpecialPos == 0) {
+    if (pauseCtx->cursorSpecialPos == 0 &&
+        !(KALEIDO_FRAME_AS_CURSOR && CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0)) {
         KaleidoScope_DrawCursor(play, PAUSE_ITEM);
     }
 

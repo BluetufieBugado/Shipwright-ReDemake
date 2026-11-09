@@ -1437,6 +1437,7 @@ Gfx* KaleidoScope_DrawPageSections(Gfx* gfx, Vtx* vertices, void** textures) {
 
 // Tabela de posicoes dos slots do menu de itens (definida em z_kaleido_item.c).
 extern s16 gKaleidoItemSlotLayout[24][2];
+extern s16 KaleidoScope_GetItemSlotIconSize(s16 slot);
 #define ITEM_DETAIL_X 236
 
 static f32 KaleidoScope_GetItemPageShiftX(PauseContext* pauseCtx) {
@@ -3206,17 +3207,22 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
     for (phi_t4 = 0, phi_t2 = 0, phi_t5 = 58; phi_t4 < 4; phi_t4++, phi_t5 -= 32) {
         for (phi_t1 = -96, phi_t3 = 0; phi_t3 < 6; phi_t3++, phi_t2 += 4, phi_t1 += 32) {
             // Posicao vinda da tabela de layout (z_kaleido_item.c): centro do icone -> canto superior esquerdo.
-            pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 2].v.ob[0] =
-                gKaleidoItemSlotLayout[phi_t4 * 6 + phi_t3][0] - 14;
+            {
+                s16 slotIdx = phi_t4 * 6 + phi_t3;
+                s16 iconSize = KaleidoScope_GetItemSlotIconSize(slotIdx);
 
-            pauseCtx->itemVtx[phi_t2 + 1].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[0] =
-                pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] + 0x1C;
+                pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 2].v.ob[0] =
+                    gKaleidoItemSlotLayout[slotIdx][0] - iconSize / 2;
 
-            pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[1] =
-                gKaleidoItemSlotLayout[phi_t4 * 6 + phi_t3][1] + 14 + pauseCtx->offsetY;
+                pauseCtx->itemVtx[phi_t2 + 1].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[0] =
+                    pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] + iconSize;
 
-            pauseCtx->itemVtx[phi_t2 + 2].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[1] =
-                pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] - 0x1C;
+                pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[1] =
+                    gKaleidoItemSlotLayout[slotIdx][1] + iconSize / 2 + pauseCtx->offsetY;
+
+                pauseCtx->itemVtx[phi_t2 + 2].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[1] =
+                    pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] - iconSize;
+            }
 
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[2] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[2] =
                 pauseCtx->itemVtx[phi_t2 + 2].v.ob[2] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[2] = 0;
@@ -3250,14 +3256,16 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 2].v.ob[0] =
                 pauseCtx->itemVtx[phi_t4].v.ob[0] - 2;
 
+            phi_t1 = pauseCtx->itemVtx[phi_t4 + 1].v.ob[0] - pauseCtx->itemVtx[phi_t4].v.ob[0] + 4;
+
             pauseCtx->itemVtx[phi_t2 + 1].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[0] =
-                pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] + 32;
+                pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] + phi_t1;
 
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[1] =
                 pauseCtx->itemVtx[phi_t4].v.ob[1] + 2;
 
             pauseCtx->itemVtx[phi_t2 + 2].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[1] =
-                pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] - 32;
+                pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] - phi_t1;
 
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[2] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[2] =
                 pauseCtx->itemVtx[phi_t2 + 2].v.ob[2] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[2] = 0;
@@ -3300,13 +3308,13 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
         phi_t4 = gBetterAmmoRendering ? D_8082B11C_all[phi_t3] : D_8082B11C[phi_t3];
 
         pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 2].v.ob[0] =
-            pauseCtx->itemVtx[phi_t4].v.ob[0];
+            pauseCtx->itemVtx[phi_t4 + 1].v.ob[0] - 14;
 
         pauseCtx->itemVtx[phi_t2 + 1].v.ob[0] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[0] =
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[0] + 8;
 
         pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 1].v.ob[1] =
-            pauseCtx->itemVtx[phi_t4].v.ob[1] - 22;
+            pauseCtx->itemVtx[phi_t4 + 2].v.ob[1] + 6;
 
         pauseCtx->itemVtx[phi_t2 + 2].v.ob[1] = pauseCtx->itemVtx[phi_t2 + 3].v.ob[1] =
             pauseCtx->itemVtx[phi_t2 + 0].v.ob[1] - 8;
