@@ -14,6 +14,7 @@
 #include "textures/map_name_static/map_name_static.h"
 #include "textures/map_48x85_static/map_48x85_static.h"
 #include "textures/parameter_static/parameter_static.h"
+#include "z_kaleido_tabfont.h"
 #include "vt.h"
 
 #include <libultraship/bridge/resourcebridge.h>
@@ -1745,8 +1746,12 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
                 gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
-                POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->itemPageVtx,
-                                                              sSelectItemTexs[gSaveContext.language]);
+                // Menu em abas: a moldura azul e o titulo "SELECT ITEM" saem; o fundo e desenhado por codigo
+                // (KaleidoScope_DrawItemPageBackground).
+                if (!KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+                    POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->itemPageVtx,
+                                                                  sSelectItemTexs[gSaveContext.language]);
+                }
 
                 KaleidoScope_DrawItemSelect(play);
                 break;
@@ -4406,89 +4411,364 @@ static s32 KaleidoScope_ItemHasAmmo(u16 item) {
            item == ITEM_BOMBCHU || item == ITEM_BEAN;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Texto do menu em abas: usa o atlas da fonte Lora de z_kaleido_tabfont.h (gerado por gen_font.py).
+// Posicoes horizontais de texto sao em quartos de unidade de tela (xq); "sc" e a escala em porcento
+// (100 = 4 texels por unidade, ou seja, ~9 unidades de altura de fonte).
+// ---------------------------------------------------------------------------------------------------------------
+static u8 sTabFontTex[TABFONT_TEXEL_COUNT];
+static bool sTabFontReady = false;
+
+static void KaleidoScope_FontInit(void) {
+    s32 i;
+
+    if (sTabFontReady) {
+        return;
+    }
+    // O atlas guarda 4 bits de alfa por texel; o IA8 usa intensidade maxima (F) e esse alfa
+    for (i = 0; i < TABFONT_TEXEL_COUNT / 2; i++) {
+        sTabFontTex[i * 2] = 0xF0 | (sTabFontPacked[i] >> 4);
+        sTabFontTex[i * 2 + 1] = 0xF0 | (sTabFontPacked[i] & 0x0F);
+    }
+    sTabFontReady = true;
+}
+
+static const TabFontGlyph* KaleidoScope_FontFindGlyph(u32 cp) {
+    s32 lo = 0;
+    s32 hi = TABFONT_GLYPH_COUNT - 1;
+
+    while (lo <= hi) {
+        s32 mid = (lo + hi) / 2;
+        if (sTabFontGlyphs[mid].cp == cp) {
+            return &sTabFontGlyphs[mid];
+        }
+        if (sTabFontGlyphs[mid].cp < cp) {
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    return NULL;
+}
+
+// Le o proximo caractere UTF-8 (so 1 e 2 bytes, o bastante para o portugues)
+static u32 KaleidoScope_FontNextCp(const char** p) {
+    const u8* s = (const u8*)*p;
+    u32 c = s[0];
+
+    if (c < 0x80) {
+        *p += 1;
+        return c;
+    }
+    if ((c & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+        *p += 2;
+        return ((c & 0x1F) << 6) | (s[1] & 0x3F);
+    }
+    *p += 1;
+    return '?';
+}
+
+// Largura em quartos de unidade de tela (len < 0 = ate o fim da string)
+static s32 KaleidoScope_FontWidthQ(const char* str, s32 len, s32 sc) {
+    const char* p = str;
+    const char* end = str + ((len < 0) ? (s32)strlen(str) : len);
+    s32 w = 0;
+
+    while (p < end) {
+        u32 cp = KaleidoScope_FontNextCp(&p);
+        const TabFontGlyph* g = KaleidoScope_FontFindGlyph(cp);
+        if (g == NULL) {
+            g = KaleidoScope_FontFindGlyph('?');
+        }
+        if (g != NULL) {
+            w += (g->adv * sc + 50) / 100;
+        }
+    }
+    return w;
+}
+
+// Desenha o texto com a ponta esquerda em xq e o topo em y (unidades de tela)
+static void KaleidoScope_FontDraw(PlayState* play, const char* str, s32 len, s32 xq, s32 y, s32 sc, u8 r, u8 g, u8 b,
+                                  u8 a) {
+    const char* p = str;
+    const char* end = str + ((len < 0) ? (s32)strlen(str) : len);
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    KaleidoScope_FontInit();
+
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
+                      TEXEL0, 0, PRIMITIVE, 0);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, a);
+
+    while (p < end) {
+        u32 cp = KaleidoScope_FontNextCp(&p);
+        const TabFontGlyph* gl = KaleidoScope_FontFindGlyph(cp);
+
+        if (gl == NULL) {
+            gl = KaleidoScope_FontFindGlyph('?');
+        }
+        if (gl == NULL) {
+            continue;
+        }
+        if (cp != ' ') {
+            s32 ulx = xq - (TABFONT_PAD * sc) / 100;
+            s32 uly = y * 4;
+            s32 lrx = ulx + (gl->cw * sc) / 100;
+            s32 lry = uly + (TABFONT_GH * sc) / 100;
+
+            gDPLoadTextureBlock(POLY_OPA_DISP++, &sTabFontTex[gl->off], G_IM_FMT_IA, G_IM_SIZ_8b, gl->cw, TABFONT_GH, 0,
+                                G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            gSPWideTextureRectangle(POLY_OPA_DISP++, ulx, uly, lrx, lry, G_TX_RENDERTILE, 0, 0, (4 << 10) * 100 / sc,
+                                    (4 << 10) * 100 / sc);
+        }
+        xq += (gl->adv * sc + 50) / 100;
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void KaleidoScope_FontDrawCentered(PlayState* play, const char* str, s32 cxq, s32 y, s32 sc, u8 r, u8 g, u8 b,
+                                          u8 a) {
+    s32 w = KaleidoScope_FontWidthQ(str, -1, sc);
+
+    KaleidoScope_FontDraw(play, str, -1, cxq - w / 2, y, sc, r, g, b, a);
+}
+
+// Quebra o texto em linhas de no maximo maxWq e desenha cada uma centralizada; devolve o numero de linhas
+static s32 KaleidoScope_FontDrawWrapped(PlayState* play, const char* str, s32 cxq, s32 y, s32 lineH, s32 maxWq,
+                                        s32 sc, u8 r, u8 g, u8 b, u8 a) {
+    const char* p = str;
+    s32 lines = 0;
+
+    while (*p != '\0' && lines < 6) {
+        const char* lineStart = p;
+        const char* lineEnd = p;
+        const char* q = p;
+        s32 w;
+
+        while (true) {
+            const char* wordEnd = q;
+            while (*wordEnd != '\0' && *wordEnd != ' ') {
+                wordEnd++;
+            }
+            w = KaleidoScope_FontWidthQ(lineStart, (s32)(wordEnd - lineStart), sc);
+            if (w > maxWq && lineEnd != lineStart) {
+                break;
+            }
+            lineEnd = wordEnd;
+            if (*wordEnd == '\0') {
+                break;
+            }
+            q = wordEnd + 1;
+        }
+
+        w = KaleidoScope_FontWidthQ(lineStart, (s32)(lineEnd - lineStart), sc);
+        KaleidoScope_FontDraw(play, lineStart, (s32)(lineEnd - lineStart), cxq - w / 2, y + lines * lineH, sc, r, g, b,
+                              a);
+        p = lineEnd;
+        if (*p == ' ') {
+            p++;
+        }
+        lines++;
+    }
+    return lines;
+}
+
+static const TabItemText* KaleidoScope_FindItemText(u16 item) {
+    s32 i;
+
+    for (i = 0; i < TABITEM_TEXT_COUNT; i++) {
+        if (sTabItemTexts[i].id == item) {
+            return &sTabItemTexts[i];
+        }
+    }
+    return NULL;
+}
+
+// Quantidade e maximo mostrados no painel (as flechas magicas usam a municao do arco)
+static bool KaleidoScope_GetItemQty(u16 item, s32* qty, s32* maxQty) {
+    if (KaleidoScope_ItemHasAmmo(item)) {
+        *qty = (s32)AMMO(item);
+        *maxQty = KaleidoScope_GetItemMaxAmmo(item);
+        return true;
+    }
+    if (item == ITEM_ARROW_FIRE || item == ITEM_ARROW_ICE || item == ITEM_ARROW_LIGHT) {
+        *qty = (s32)AMMO(ITEM_BOW);
+        *maxQty = CUR_CAPACITY(UPG_QUIVER);
+        return true;
+    }
+    return false;
+}
+
+static void KaleidoScope_DrawDiamond(PlayState* play, s32 cx, s32 cy, s32 r, u8 cr, u8 cg, u8 cb, u8 a) {
+    s32 i;
+
+    for (i = -r; i <= r; i++) {
+        s32 hw = r - abs(i);
+        KaleidoScope_TabBarFill(play, cx - hw, cy + i, cx + hw + 1, cy + i + 1, cr, cg, cb, a);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Painel de detalhes do item, como no remake: item grande, nome com a quantidade ao lado, divisor,
+// descricao e custo de magia. Sem caixa. Os textos em portugues vem de sTabItemTexts (z_kaleido_tabfont.h);
+// um item sem texto cai no nome original do jogo.
+// ---------------------------------------------------------------------------------------------------------------
+#define DETAIL_NAME_SC 125
+#define DETAIL_MAX_SC 85
+#define DETAIL_DESC_SC 94
+#define DETAIL_DESC_LINE_H 11
+
 static void KaleidoScope_DrawItemDetailPanel(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
     s32 rightEdge = OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH);
     s32 panelL = ITEM_DETAIL_X;
     s32 panelR = rightEdge - 8;
-    s32 panelT = 72;
-    s32 panelB = 230;
     s32 panelW = panelR - panelL;
     s32 centerX = (panelL + panelR) / 2;
+    s32 availW = panelW - 12;
     u16 item = pauseCtx->cursorItem[PAUSE_ITEM];
     bool hasItem = (pauseCtx->cursorSpecialPos == 0) && (pauseCtx->namedItem != PAUSE_ITEM_NONE) &&
                    (item != PAUSE_ITEM_NONE) && (item < 0xBF);
-    s32 iconSize = (panelW >= 104) ? 88 : (panelW - 8);
+    s32 iconSize = (panelW - 16 < 100) ? (panelW - 16) : 100;
     s32 iconX = centerX - iconSize / 2;
-    s32 iconY = 80;
-    s32 nameW = (panelW - 8 < 192) ? (panelW - 8) : 192; // largura da textura do nome (128 texels) na tela
-    s32 nameH = nameW / 8;                               // 128x16 -> proporcao 8:1
-    s32 nameX = centerX - nameW / 2;
-    s32 nameY = iconY + iconSize + 8;
-    char qty[16];
+    s32 iconY = TAB_BAR_H + 8;
+    s32 nameY = iconY + iconSize + 2;
+    const TabItemText* text;
+    s32 qty = 0;
+    s32 maxQty = 0;
+    bool hasQty;
+    char qtyStr[16];
+    char maxStr[16];
 
-    if (panelW < 24) {
+    if (panelW < 40 || !hasItem) {
         return;
     }
 
+    text = KaleidoScope_FindItemText(item);
+    hasQty = KaleidoScope_GetItemQty(item, &qty, &maxQty);
+
     OPEN_DISPS(play->state.gfxCtx);
 
-    // Fundo do painel e borda dourada
+    // Icone grande (RGBA32 32x32 ampliado)
     KaleidoScope_SetupFillState(play);
-    KaleidoScope_TabBarFill(play, panelL, panelT, panelR, panelB, 18, 22, 36, alpha);
-    KaleidoScope_TabBarFill(play, panelL, panelT, panelR, panelT + 1, 120, 92, 52, alpha);
-    KaleidoScope_TabBarFill(play, panelL, panelB - 1, panelR, panelB, 120, 92, 52, alpha);
-    KaleidoScope_TabBarFill(play, panelL, panelT, panelL + 1, panelB, 120, 92, 52, alpha);
-    KaleidoScope_TabBarFill(play, panelR - 1, panelT, panelR, panelB, 120, 92, 52, alpha);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, gItemIcons[item], G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
+                        G_TX_NOLOD);
+    gSPWideTextureRectangle(POLY_OPA_DISP++, iconX << 2, iconY << 2, (iconX + iconSize) << 2, (iconY + iconSize) << 2,
+                            G_TX_RENDERTILE, 0, 0, (1 << 10) * 32 / iconSize, (1 << 10) * 32 / iconSize);
     gDPPipeSync(POLY_OPA_DISP++);
 
-    if (hasItem) {
-        // Icone grande (RGBA32 32x32 ampliado)
-        gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
-        gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
-        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
-        gDPLoadTextureBlock(POLY_OPA_DISP++, gItemIcons[item], G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
-                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
-                            G_TX_NOLOD, G_TX_NOLOD);
-        gSPWideTextureRectangle(POLY_OPA_DISP++, iconX << 2, iconY << 2, (iconX + iconSize) << 2,
-                                (iconY + iconSize) << 2, G_TX_RENDERTILE, 0, 0, (1 << 10) * 32 / iconSize,
-                                (1 << 10) * 32 / iconSize);
-        gDPPipeSync(POLY_OPA_DISP++);
+    if (text == NULL) {
+        // Sem texto proprio: nome original do jogo (textura IA4 128x16 que o jogo ja carrega para o cursor)
+        s32 nameW = (panelW - 8 < 192) ? (panelW - 8) : 192;
+        s32 nameH = nameW / 8;
+        s32 nameX = centerX - nameW / 2;
 
-        // Nome (textura IA4 128x16 que o jogo ja carrega para o cursor)
         gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
                           TEXEL0, 0, PRIMITIVE, 0);
-        if (pauseCtx->nameColorSet == 1) {
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 120, 120, 120, alpha);
-        } else {
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 244, 214, alpha);
-        }
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 244, 214, alpha);
         gDPLoadTextureBlock_4b(POLY_OPA_DISP++, pauseCtx->nameSegment, G_IM_FMT_IA, 128, 16, 0,
                                G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
                                G_TX_NOLOD, G_TX_NOLOD);
-        gSPWideTextureRectangle(POLY_OPA_DISP++, nameX << 2, nameY << 2, (nameX + nameW) << 2,
-                                (nameY + nameH) << 2, G_TX_RENDERTILE, 0, 0, (1 << 10) * 128 / nameW,
-                                (1 << 10) * 16 / nameH);
+        gSPWideTextureRectangle(POLY_OPA_DISP++, nameX << 2, nameY << 2, (nameX + nameW) << 2, (nameY + nameH) << 2,
+                                G_TX_RENDERTILE, 0, 0, (1 << 10) * 128 / nameW, (1 << 10) * 16 / nameH);
         gDPPipeSync(POLY_OPA_DISP++);
 
-        // Quantidade (n/maxAmmo)
-        if (KaleidoScope_ItemHasAmmo(item)) {
-            s32 maxAmmo = KaleidoScope_GetItemMaxAmmo(item);
-            s32 w;
-            if (maxAmmo > 0) {
-                snprintf(qty, sizeof(qty), "%d/%d", (s32)AMMO(item), maxAmmo);
+        if (hasQty) {
+            if (maxQty > 0) {
+                snprintf(qtyStr, sizeof(qtyStr), "%d/%d", (int)qty, (int)maxQty);
             } else {
-                snprintf(qty, sizeof(qty), "%d", (s32)AMMO(item));
+                snprintf(qtyStr, sizeof(qtyStr), "%d", (int)qty);
             }
-            w = KaleidoScope_PixelTextWidth(qty, 3);
-            if (w > panelW - 8) {
-                w = KaleidoScope_PixelTextWidth(qty, 2);
-                KaleidoScope_SetupFillState(play);
-                KaleidoScope_DrawPixelText(play, qty, centerX - w / 2, nameY + nameH + 8, 2, 245, 240, 225, alpha);
-            } else {
-                KaleidoScope_SetupFillState(play);
-                KaleidoScope_DrawPixelText(play, qty, centerX - w / 2, nameY + nameH + 8, 3, 245, 240, 225, alpha);
+            KaleidoScope_FontDrawCentered(play, qtyStr, centerX * 4, nameY + nameH + 4, DETAIL_NAME_SC, 255, 244, 214,
+                                          alpha);
+        }
+    } else {
+        s32 nameSc = DETAIL_NAME_SC;
+        s32 nameWq = KaleidoScope_FontWidthQ(text->name, -1, nameSc);
+        s32 qtyWq = 0;
+        s32 maxWq = 0;
+        s32 sepWq = 13 * 4; // espaco + losango + espaco, em quartos de unidade
+        s32 lineH = (TABFONT_GH * DETAIL_NAME_SC / 100) / 4 + 1;
+        s32 maxDy = (TABFONT_ASCENT * (DETAIL_NAME_SC - DETAIL_MAX_SC) / 100 + 2) / 4;
+        bool stacked = false;
+        s32 dividerY;
+        s32 descY;
+        s32 lines = 0;
+
+        // Nome grande demais para o painel: reduz a escala para caber
+        if (nameWq > availW * 4) {
+            nameSc = nameSc * (availW * 4) / nameWq;
+            if (nameSc < 70) {
+                nameSc = 70;
+            }
+            nameWq = KaleidoScope_FontWidthQ(text->name, -1, nameSc);
+        }
+
+        if (hasQty) {
+            snprintf(qtyStr, sizeof(qtyStr), "%d", (int)qty);
+            snprintf(maxStr, sizeof(maxStr), "/%d", (int)maxQty);
+            qtyWq = KaleidoScope_FontWidthQ(qtyStr, -1, DETAIL_NAME_SC);
+            maxWq = (maxQty > 0) ? KaleidoScope_FontWidthQ(maxStr, -1, DETAIL_MAX_SC) : 0;
+            stacked = (nameWq + sepWq + qtyWq + maxWq) > availW * 4;
+        }
+
+        if (!hasQty) {
+            KaleidoScope_FontDraw(play, text->name, -1, centerX * 4 - nameWq / 2, nameY, nameSc, 255, 244, 214, alpha);
+        } else if (!stacked) {
+            s32 totalWq = nameWq + sepWq + qtyWq + maxWq;
+            s32 xq = centerX * 4 - totalWq / 2;
+
+            KaleidoScope_FontDraw(play, text->name, -1, xq, nameY, nameSc, 255, 244, 214, alpha);
+            xq += nameWq;
+            KaleidoScope_SetupFillState(play);
+            KaleidoScope_DrawDiamond(play, (xq + sepWq / 2) / 4, nameY + lineH / 2 + 1, 2, 150, 118, 66, alpha);
+            xq += sepWq;
+            KaleidoScope_FontDraw(play, qtyStr, -1, xq, nameY, DETAIL_NAME_SC, 255, 244, 214, alpha);
+            xq += qtyWq;
+            if (maxQty > 0) {
+                KaleidoScope_FontDraw(play, maxStr, -1, xq, nameY + maxDy, DETAIL_MAX_SC, 190, 176, 146, alpha);
+            }
+        } else {
+            s32 totalWq = qtyWq + maxWq;
+
+            KaleidoScope_FontDraw(play, text->name, -1, centerX * 4 - nameWq / 2, nameY, nameSc, 255, 244, 214, alpha);
+            nameY += lineH;
+            KaleidoScope_FontDraw(play, qtyStr, -1, centerX * 4 - totalWq / 2, nameY, DETAIL_NAME_SC, 255, 244, 214,
+                                  alpha);
+            if (maxQty > 0) {
+                KaleidoScope_FontDraw(play, maxStr, -1, centerX * 4 - totalWq / 2 + qtyWq, nameY + maxDy,
+                                      DETAIL_MAX_SC, 190, 176, 146, alpha);
+            }
+        }
+
+        dividerY = nameY + lineH + 2;
+
+        // Divisor com losango no centro
+        KaleidoScope_SetupFillState(play);
+        KaleidoScope_TabBarFill(play, panelL + 4, dividerY, centerX - 6, dividerY + 1, 120, 92, 52, alpha);
+        KaleidoScope_TabBarFill(play, centerX + 7, dividerY, panelR - 4, dividerY + 1, 120, 92, 52, alpha);
+        KaleidoScope_DrawDiamond(play, centerX, dividerY, 2, 150, 118, 66, alpha);
+        gDPPipeSync(POLY_OPA_DISP++);
+
+        // Descricao e custo de magia (so se o painel for largo o bastante; em 4:3 fica so o nome)
+        if (panelW >= 100) {
+            descY = dividerY + 6;
+            lines = KaleidoScope_FontDrawWrapped(play, text->desc, centerX * 4, descY, DETAIL_DESC_LINE_H, availW * 4,
+                                                 DETAIL_DESC_SC, 222, 212, 186, alpha);
+            if (text->magic[0] != '\0') {
+                KaleidoScope_FontDrawCentered(play, text->magic, centerX * 4, descY + lines * DETAIL_DESC_LINE_H + 3,
+                                              DETAIL_DESC_SC, 126, 214, 120, alpha);
             }
         }
     }
@@ -4612,6 +4892,93 @@ static void KaleidoScope_DrawTabBarRupees(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Dicas do rodape (canto inferior direito), como no remake: "Selecionar (A)" e "Voltar (B)".
+// ---------------------------------------------------------------------------------------------------------------
+#define FOOTER_STRIP_T 221
+#define FOOTER_SC 94
+
+static void KaleidoScope_DrawFooterBadge(PlayState* play, s32 cx, s32 cy, u8 alpha) {
+    static const u8 sHalf[11] = { 2, 3, 4, 4, 5, 5, 5, 4, 4, 3, 2 };
+    s32 i;
+
+    for (i = 0; i < 11; i++) {
+        KaleidoScope_TabBarFill(play, cx - sHalf[i], cy - 5 + i, cx + sHalf[i] + 1, cy - 4 + i, 74, 56, 34, alpha);
+    }
+}
+
+static void KaleidoScope_DrawFooterHints(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    s32 rightEdge = OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH);
+    s32 selW = KaleidoScope_FontWidthQ(sTabHintSelect, -1, FOOTER_SC) / 4;
+    s32 backW = KaleidoScope_FontWidthQ(sTabHintBack, -1, FOOTER_SC) / 4;
+    s32 gap = 4;
+    s32 between = 14;
+    s32 margin = 10;
+    s32 totalW = selW + gap + 11 + between + backW + gap + 11;
+    s32 x1 = rightEdge - margin - totalW;
+    s32 x2 = x1 + selW + gap + 11 + between;
+    s32 cy = FOOTER_STRIP_T + 9;
+    s32 textY = FOOTER_STRIP_T + 3;
+    s32 badgeAx = x1 + selW + gap + 5;
+    s32 badgeBx = x2 + backW + gap + 5;
+    s32 hintW;
+
+    // Faixa escura translucida atras das dicas
+    KaleidoScope_SetupFillState(play);
+    KaleidoScope_TabBarFill(play, x1 - 12, FOOTER_STRIP_T, rightEdge, SCREEN_HEIGHT, 18, 13, 10, (u8)(alpha * 7 / 10));
+    KaleidoScope_DrawFooterBadge(play, badgeAx, cy, alpha);
+    KaleidoScope_DrawFooterBadge(play, badgeBx, cy, alpha);
+
+    KaleidoScope_FontDraw(play, sTabHintSelect, -1, x1 * 4, textY, FOOTER_SC, 236, 226, 196, alpha);
+    KaleidoScope_FontDraw(play, sTabHintBack, -1, x2 * 4, textY, FOOTER_SC, 236, 226, 196, alpha);
+
+    hintW = KaleidoScope_FontWidthQ("A", -1, 70);
+    KaleidoScope_FontDraw(play, "A", -1, badgeAx * 4 - hintW / 2, cy - 4, 70, 255, 244, 214, alpha);
+    hintW = KaleidoScope_FontWidthQ("B", -1, 70);
+    KaleidoScope_FontDraw(play, "B", -1, badgeBx * 4 - hintW / 2, cy - 4, 70, 255, 244, 214, alpha);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fundo da pagina de itens: marrom com veios discretos e vinheta, e o lado direito (painel de detalhes) em preto
+// com uma transicao suave. Desenhado atras de tudo, depois do preenchimento escuro.
+// ---------------------------------------------------------------------------------------------------------------
+static void KaleidoScope_DrawItemPageBackground(PlayState* play, u8 alpha) {
+    s32 l = OTRGetRectDimensionFromLeftEdge(0);
+    s32 r = OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH);
+    s32 panelX = ITEM_DETAIL_X - 14;
+    s32 y;
+    s32 i;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    KaleidoScope_SetupFillState(play);
+
+    // Base marrom e veios horizontais
+    KaleidoScope_TabBarFill(play, l, 0, r, SCREEN_HEIGHT, 58, 42, 28, alpha);
+    for (y = TAB_BAR_H + 2; y < SCREEN_HEIGHT; y += 6) {
+        KaleidoScope_TabBarFill(play, l, y, r, y + 2, 0, 0, 0, (u8)(alpha * 22 / 255));
+    }
+
+    // Vinheta no topo e na base
+    for (i = 0; i < 6; i++) {
+        u8 a = (u8)(alpha * ((6 - i) * 14) / 255);
+        KaleidoScope_TabBarFill(play, l, TAB_BAR_H + 1 + i * 3, r, TAB_BAR_H + 4 + i * 3, 0, 0, 0, a);
+        KaleidoScope_TabBarFill(play, l, SCREEN_HEIGHT - 3 - i * 3, r, SCREEN_HEIGHT - i * 3, 0, 0, 0, a);
+    }
+
+    // Transicao para o painel preto da direita
+    for (i = 0; i < 6; i++) {
+        u8 a = (u8)(alpha * ((i + 1) * 36) / 255);
+        KaleidoScope_TabBarFill(play, panelX - 18 + i * 3, 0, panelX - 15 + i * 3, SCREEN_HEIGHT, 0, 0, 0, a);
+    }
+    KaleidoScope_TabBarFill(play, panelX, 0, r, SCREEN_HEIGHT, 6, 6, 9, alpha);
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void KaleidoScope_Draw(PlayState* play) {
     Input* input = &play->state.input[0];
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -4674,6 +5041,11 @@ void KaleidoScope_Draw(PlayState* play) {
             gDPFillWideRectangle(POLY_OPA_DISP++, OTRGetRectDimensionFromLeftEdge(0), 0,
                                  OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT);
             gDPPipeSync(POLY_OPA_DISP++);
+
+            // Pagina de itens: fundo marrom e painel preto da direita
+            if (pauseCtx->pageIndex == PAUSE_ITEM) {
+                KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha);
+            }
         }
 
         Gfx_SetupDL_42Opa(play->state.gfxCtx);
@@ -4696,6 +5068,11 @@ void KaleidoScope_Draw(PlayState* play) {
             pauseCtx->pageIndex <= PAUSE_EQUIP) {
             KaleidoScope_DrawTabBar(play);
             KaleidoScope_DrawTabBarRupees(play);
+
+            // Dicas do rodape na pagina de itens (os botoes do HUD ficam escondidos la, ver z_parameter.c)
+            if (pauseCtx->pageIndex == PAUSE_ITEM) {
+                KaleidoScope_DrawFooterHints(play);
+            }
         }
 
         // Painel de detalhes do item (pagina de itens com o menu aberto)
