@@ -847,8 +847,11 @@ typedef enum {
 #define PAUSE_CURSOR_PAGE_LEFT 10
 #define PAUSE_CURSOR_PAGE_RIGHT 11
 
-#define PAUSE_EQUIP_PLAYER_WIDTH 64
-#define PAUSE_EQUIP_PLAYER_HEIGHT 112
+// Resolucao do framebuffer do Link na tela de Equipamento. A proporcao (3:4) acompanha o oval do menu em abas.
+// Cuidado: o desenho usa tiles de 4096 bytes (altura do tile = 4096 / (largura * 2)), entao quanto maior a largura,
+// menos niveis de coordenada de textura na vertical. 192 x 256 e um bom equilibrio.
+#define PAUSE_EQUIP_PLAYER_WIDTH 192
+#define PAUSE_EQUIP_PLAYER_HEIGHT 256
 
 typedef enum {
     /* 0x00 */ PAUSE_ITEM,

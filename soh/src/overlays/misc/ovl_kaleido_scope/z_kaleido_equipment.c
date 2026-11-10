@@ -1,4 +1,5 @@
 #include "z_kaleido_scope.h"
+#include <math.h>
 #include "textures/icon_item_static/icon_item_static.h"
 #include "textures/parameter_static/parameter_static.h"
 #include "soh/Enhancements/cosmetics/cosmeticsTypes.h"
@@ -146,14 +147,18 @@ typedef enum {
     EQUIP_FRAMING_TORSO,  // tunica selecionada: zoom no torso
 } EquipLinkFramingId;
 
+// Escala base do Link dentro do oval (o oval e bem maior que o antigo painel). Ajuste ao vivo:
+//   set gEnhancements.EquipPose.BaseScale 1.12   set gEnhancements.EquipPose.BaseY 0
+#define EQUIP_LINK_BASE_SCALE 1.12f
+
 static EquipLinkFraming sEquipFramings[] = {
-    { 0.0f, 0.0f, 0.0f, 1.0f, 0 },
-    { 0.0f, 0.0f, 0.0f, 1.0f, -0x3000 }, // espada: valores iniciais, ajustar por CVar
-    { 0.0f, 0.0f, 0.0f, 1.0f, 0x3000 },  // escudo: valores iniciais, ajustar por CVar
-    { 0.0f, -60.0f, 0.0f, 1.8f, 0 },     // tunica: valores iniciais, ajustar por CVar
+    { 0.0f, 0.0f, 0.0f, EQUIP_LINK_BASE_SCALE, 0 },
+    { 0.0f, 0.0f, 0.0f, EQUIP_LINK_BASE_SCALE, -0x3000 }, // espada: valores iniciais, ajustar por CVar
+    { 0.0f, 0.0f, 0.0f, EQUIP_LINK_BASE_SCALE, 0x3000 },  // escudo: valores iniciais, ajustar por CVar
+    { 0.0f, -60.0f, 0.0f, 1.8f, 0 },                      // tunica: valores iniciais, ajustar por CVar
 };
 
-static EquipLinkFraming sEquipFramingCur = { 0.0f, 0.0f, 0.0f, 1.0f, 0 };
+static EquipLinkFraming sEquipFramingCur = { 0.0f, 0.0f, 0.0f, EQUIP_LINK_BASE_SCALE, 0 };
 static u32 sEquipFramingLastFrame = 0;
 
 static EquipLinkFramingId KaleidoScope_GetEquipLinkFramingId(PlayState* play) {
@@ -187,6 +192,11 @@ static EquipLinkFramingId KaleidoScope_GetEquipLinkFramingId(PlayState* play) {
 //   set gEnhancements.EquipPose.SwordRot -12288   set gEnhancements.EquipPose.ShieldRot 12288
 static EquipLinkFraming KaleidoScope_GetEquipLinkFraming(EquipLinkFramingId id) {
     EquipLinkFraming f = sEquipFramings[id];
+
+    if (id != EQUIP_FRAMING_TORSO) {
+        f.scaleMul = CVarGetFloat(CVAR_ENHANCEMENT("EquipPose.BaseScale"), f.scaleMul);
+        f.dy = CVarGetFloat(CVAR_ENHANCEMENT("EquipPose.BaseY"), f.dy);
+    }
 
     if (id == EQUIP_FRAMING_SWORD) {
         f.rotAdd = (s16)CVarGetInteger(CVAR_ENHANCEMENT("EquipPose.SwordRot"), f.rotAdd);
@@ -282,20 +292,31 @@ void KaleidoScope_DrawPlayerWork(PlayState* play) {
 //   centro   : painel do Link
 //   direita  : espadas / escudos / tunicas (3 x 3)
 // ---------------------------------------------------------------------------------------------------------------
-#define EQUIP_FRAME_SIZE 32    // largura/altura da moldura
-#define EQUIP_FRAME_CUT 7      // corte dos cantos (octogono)
-#define EQUIP_FRAME_GROW 2     // quanto o slot selecionado cresce por lado
-#define EQUIP_ICON_SIZE 28     // lado do icone
+#define EQUIP_FRAME_GROW 2        // quanto o slot selecionado cresce por lado
 #define EQUIP_DRAW_EMPTY_FRAMES 1 // 1 = desenha moldura tambem nos slots que o jogador ainda nao tem
 
-// Imagem do Link (64 x 112): canto superior esquerdo
-#define EQUIP_LINK_X -50
-#define EQUIP_LINK_TOP 51
-// Painel escuro atras do Link
-#define EQUIP_LINK_PANEL_L -54
-#define EQUIP_LINK_PANEL_R 18
-#define EQUIP_LINK_PANEL_T 63
-#define EQUIP_LINK_PANEL_B -71
+// Tamanhos por grupo, como no remake: espadas > escudos > tunicas (hw/hh = meia largura/meia altura da moldura;
+// icon = lado do icone). Melhorias e botas (coluna da esquerda) usam o mesmo tamanho entre si.
+#define EQUIP_SWORD_HW 20
+#define EQUIP_SWORD_HH 26
+#define EQUIP_SWORD_ICON 42
+#define EQUIP_SHIELD_HW 19
+#define EQUIP_SHIELD_HH 22
+#define EQUIP_SHIELD_ICON 37
+#define EQUIP_TUNIC_HW 18
+#define EQUIP_TUNIC_HH 21
+#define EQUIP_TUNIC_ICON 34
+#define EQUIP_LEFT_HW 19
+#define EQUIP_LEFT_HH 19
+#define EQUIP_LEFT_ICON 34
+
+// Oval do Link (centro, meia largura e meia altura). Proporcao ~0,74 como no remake.
+#define EQUIP_OVAL_CX -4
+#define EQUIP_OVAL_CY -14
+#define EQUIP_OVAL_HW 71
+#define EQUIP_OVAL_HH 96
+#define EQUIP_OVAL_SEGMENTS 72 // lados do poligono que aproxima a elipse (multiplo de EQUIP_OVAL_CHUNK)
+#define EQUIP_OVAL_CHUNK 24    // segmentos por carga de vertices (maximo 30)
 
 // Deslocamento das setas de pagina (L/R), em unidades do painel de informacoes, para fora da grade
 #define EQUIP_ARROW_SHIFT_INFO 32
@@ -303,14 +324,38 @@ void KaleidoScope_DrawPlayerWork(PlayState* play) {
 // Centro {x, y} de cada slot, indexado por cursorY * 4 + cursorX
 static const s16 sEquipSlotCenter[16][2] = {
     // linha 0: melhoria | espadas
-    { -112, 45 }, { 42, 28 }, { 76, 28 }, { 110, 28 },
+    { -164, 38 }, { 96, 22 }, { 138, 22 }, { 180, 22 },
     // linha 1: melhoria | escudos
-    { -112, 11 }, { 42, -6 }, { 76, -6 }, { 110, -6 },
+    { -164, -4 }, { 96, -30 }, { 138, -30 }, { 180, -30 },
     // linha 2: melhoria | tunicas
-    { -112, -23 }, { 42, -40 }, { 76, -40 }, { 110, -40 },
-    // linha 3: melhoria | botas (coluna B, a esquerda)
-    { -112, -57 }, { -78, 45 }, { -78, 11 }, { -78, -23 },
+    { -164, -46 }, { 96, -79 }, { 138, -79 }, { 180, -79 },
+    // linha 3: melhoria | botas (coluna B, a esquerda, intercaladas com as melhorias)
+    { -164, -88 }, { -116, 17 }, { -116, -25 }, { -116, -67 },
 };
+
+// Tamanho da moldura (meia largura / meia altura) e do icone de um slot
+static void KaleidoScope_EquipGetSlotSize(s16 slot, s16* hw, s16* hh, s16* icon) {
+    s16 row = slot >> 2;
+    s16 col = slot & 3;
+
+    if (col == 0 || row == 3) { // melhorias e botas
+        *hw = EQUIP_LEFT_HW;
+        *hh = EQUIP_LEFT_HH;
+        *icon = EQUIP_LEFT_ICON;
+    } else if (row == 0) {
+        *hw = EQUIP_SWORD_HW;
+        *hh = EQUIP_SWORD_HH;
+        *icon = EQUIP_SWORD_ICON;
+    } else if (row == 1) {
+        *hw = EQUIP_SHIELD_HW;
+        *hh = EQUIP_SHIELD_HH;
+        *icon = EQUIP_SHIELD_ICON;
+    } else {
+        *hw = EQUIP_TUNIC_HW;
+        *hh = EQUIP_TUNIC_HH;
+        *icon = EQUIP_TUNIC_ICON;
+    }
+}
 
 bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx) {
     return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_EQUIP &&
@@ -323,12 +368,22 @@ void KaleidoScope_GetEquipSlotCenter(s16 slot, s16* x, s16* y) {
 }
 
 s16 KaleidoScope_GetEquipIconSize(void) {
-    return EQUIP_ICON_SIZE;
+    return EQUIP_LEFT_ICON;
 }
 
+s16 KaleidoScope_GetEquipSlotIconSize(s16 slot) {
+    s16 hw;
+    s16 hh;
+    s16 icon;
+
+    KaleidoScope_EquipGetSlotSize(slot, &hw, &hh, &icon);
+    return icon;
+}
+
+// Posicao do quadrilatero 80..83 (usado so no layout classico; no layout em abas o oval desenha o Link)
 void KaleidoScope_GetEquipLinkImagePos(s16* x, s16* top) {
-    *x = EQUIP_LINK_X;
-    *top = EQUIP_LINK_TOP;
+    *x = -50;
+    *top = 51;
 }
 
 // Deslocamento horizontal das setas de pagina (esquerda negativo, direita positivo)
@@ -552,8 +607,12 @@ static void KaleidoScope_EquipDrawPoly(PlayState* play, s16 cx, s16 cy, s16 hw, 
 }
 
 // Moldura de um slot: borda + miolo
-static void KaleidoScope_EquipDrawFrame(PlayState* play, s16 cx, s16 cy, s16 half, bool selected, bool equipped,
-                                        bool owned, u8 alpha) {
+static void KaleidoScope_EquipDrawFrame(PlayState* play, s16 cx, s16 cy, s16 hw, s16 hh, bool selected,
+                                        bool equipped, bool owned, u8 alpha) {
+    s16 cut = (hw < hh ? hw : hh) / 2 - 3; // corte dos cantos (octogono) proporcional ao tamanho
+    if (cut < 5) {
+        cut = 5;
+    }
     u8 br, bg, bb; // borda
     u8 fr, fg, fb; // miolo
 
@@ -575,8 +634,8 @@ static void KaleidoScope_EquipDrawFrame(PlayState* play, s16 cx, s16 cy, s16 hal
         fr = 14; fg = 11; fb = 9;
     }
 
-    KaleidoScope_EquipDrawPoly(play, cx, cy, half, half, EQUIP_FRAME_CUT, br, bg, bb, alpha);
-    KaleidoScope_EquipDrawPoly(play, cx, cy, half - 2, half - 2, EQUIP_FRAME_CUT - 1, fr, fg, fb, alpha);
+    KaleidoScope_EquipDrawPoly(play, cx, cy, hw, hh, cut, br, bg, bb, alpha);
+    KaleidoScope_EquipDrawPoly(play, cx, cy, hw - 2, hh - 2, cut - 1, fr, fg, fb, alpha);
 }
 
 // Painel do Link e molduras dos slots, desenhados antes dos icones (mesma matriz dos icones, entao acompanham
@@ -585,7 +644,9 @@ static void KaleidoScope_DrawEquipFrames(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
     s16 selectedSlot = (pauseCtx->cursorSpecialPos == 0) ? pauseCtx->cursorPoint[PAUSE_EQUIP] : -1;
-    s16 half = EQUIP_FRAME_SIZE / 2;
+    s16 hw;
+    s16 hh;
+    s16 icon;
     s16 slot;
     s16 x;
     s16 y;
@@ -596,15 +657,7 @@ static void KaleidoScope_DrawEquipFrames(PlayState* play) {
     gDPPipeSync(POLY_OPA_DISP++);
     gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
 
-    // Painel do Link
-    KaleidoScope_EquipDrawPoly(play, (EQUIP_LINK_PANEL_L + EQUIP_LINK_PANEL_R) / 2,
-                               (EQUIP_LINK_PANEL_T + EQUIP_LINK_PANEL_B) / 2 + pauseCtx->offsetY,
-                               (EQUIP_LINK_PANEL_R - EQUIP_LINK_PANEL_L) / 2,
-                               (EQUIP_LINK_PANEL_T - EQUIP_LINK_PANEL_B) / 2, 10, 62, 49, 34, alpha);
-    KaleidoScope_EquipDrawPoly(play, (EQUIP_LINK_PANEL_L + EQUIP_LINK_PANEL_R) / 2,
-                               (EQUIP_LINK_PANEL_T + EQUIP_LINK_PANEL_B) / 2 + pauseCtx->offsetY,
-                               (EQUIP_LINK_PANEL_R - EQUIP_LINK_PANEL_L) / 2 - 2,
-                               (EQUIP_LINK_PANEL_T - EQUIP_LINK_PANEL_B) / 2 - 2, 9, 12, 10, 9, alpha);
+    // (O painel do Link agora e o oval, desenhado por KaleidoScope_DrawEquipOvalImage)
 
     // Molduras (o slot selecionado por ultimo, para ficar por cima)
     for (slot = 0; slot < 16; slot++) {
@@ -615,13 +668,15 @@ static void KaleidoScope_DrawEquipFrames(PlayState* play) {
         }
 
         KaleidoScope_GetEquipSlotCenter(slot, &x, &y);
-        KaleidoScope_EquipDrawFrame(play, x, y + pauseCtx->offsetY, half, false, KaleidoScope_EquipSlotEquipped(slot),
-                                    owned, alpha);
+        KaleidoScope_EquipGetSlotSize(slot, &hw, &hh, &icon);
+        KaleidoScope_EquipDrawFrame(play, x, y + pauseCtx->offsetY, hw, hh, false,
+                                    KaleidoScope_EquipSlotEquipped(slot), owned, alpha);
     }
 
     if (selectedSlot >= 0) {
         KaleidoScope_GetEquipSlotCenter(selectedSlot, &x, &y);
-        KaleidoScope_EquipDrawFrame(play, x, y + pauseCtx->offsetY, half + EQUIP_FRAME_GROW, true,
+        KaleidoScope_EquipGetSlotSize(selectedSlot, &hw, &hh, &icon);
+        KaleidoScope_EquipDrawFrame(play, x, y + pauseCtx->offsetY, hw + EQUIP_FRAME_GROW, hh + EQUIP_FRAME_GROW, true,
                                     KaleidoScope_EquipSlotEquipped(selectedSlot), true, alpha);
     }
 
@@ -629,6 +684,143 @@ static void KaleidoScope_DrawEquipFrames(PlayState* play) {
     gDPPipeSync(POLY_OPA_DISP++);
     Gfx_SetupDL_42Opa(play->state.gfxCtx);
     gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Preenche a elipse com a textura do Link (framebuffer): leque de triangulos com o centro + pontos da borda.
+// Cada ponto recebe a coordenada de textura correspondente a sua posicao na elipse, entao o Link e recortado no oval
+// sem precisar de scissor. As coordenadas de textura seguem a mesma convencao do quadrilatero original
+// (largura inteira = W << 5, altura do tile = 4096 / (W * 2) linhas, em s10.5).
+static void KaleidoScope_EquipDrawOvalFill(PlayState* play, s16 cx, s16 cy, s16 hw, s16 hh) {
+    const s32 chunks = EQUIP_OVAL_SEGMENTS / EQUIP_OVAL_CHUNK;
+    const f32 texW = (f32)(PAUSE_EQUIP_PLAYER_WIDTH << 5);
+    const f32 texH = (f32)((4096 / (PAUSE_EQUIP_PLAYER_WIDTH * 2)) << 5);
+    s32 chunk;
+    s32 i;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    for (chunk = 0; chunk < chunks; chunk++) {
+        Vtx* vtx = Graph_Alloc(play->state.gfxCtx, (EQUIP_OVAL_CHUNK + 2) * sizeof(Vtx));
+
+        // vertice 0: centro
+        vtx[0].v.ob[0] = cx;
+        vtx[0].v.ob[1] = cy;
+        vtx[0].v.ob[2] = 0;
+        vtx[0].v.flag = 0;
+        vtx[0].v.tc[0] = (s16)(texW * 0.5f);
+        vtx[0].v.tc[1] = (s16)(texH * 0.5f);
+        vtx[0].v.cn[0] = vtx[0].v.cn[1] = vtx[0].v.cn[2] = vtx[0].v.cn[3] = 255;
+
+        for (i = 0; i <= EQUIP_OVAL_CHUNK; i++) {
+            f32 ang = (f32)(chunk * EQUIP_OVAL_CHUNK + i) * (6.2831853f / (f32)EQUIP_OVAL_SEGMENTS);
+            f32 ca = cosf(ang);
+            f32 sa = sinf(ang);
+            Vtx* v = &vtx[1 + i];
+
+            v->v.ob[0] = (s16)(cx + hw * ca + (ca >= 0.0f ? 0.5f : -0.5f));
+            v->v.ob[1] = (s16)(cy + hh * sa + (sa >= 0.0f ? 0.5f : -0.5f));
+            v->v.ob[2] = 0;
+            v->v.flag = 0;
+            v->v.tc[0] = (s16)(texW * (0.5f + 0.5f * ca));
+            v->v.tc[1] = (s16)(texH * (0.5f - 0.5f * sa));
+            v->v.cn[0] = v->v.cn[1] = v->v.cn[2] = v->v.cn[3] = 255;
+        }
+
+        gSPVertex(POLY_OPA_DISP++, vtx, EQUIP_OVAL_CHUNK + 2, 0);
+        for (i = 0; i < EQUIP_OVAL_CHUNK; i += 2) {
+            gSP2Triangles(POLY_OPA_DISP++, 0, 1 + i, 2 + i, 0, 0, 2 + i, 3 + i, 0);
+        }
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Anel entre duas elipses concentricas (externa: hwO/hhO, interna: hwI/hhI), cor lisa.
+#define EQUIP_RING_CHUNK 12
+static void KaleidoScope_EquipDrawOvalRing(PlayState* play, s16 cx, s16 cy, s16 hwO, s16 hhO, s16 hwI, s16 hhI, u8 r,
+                                           u8 g, u8 b, u8 a) {
+    const s32 chunks = EQUIP_OVAL_SEGMENTS / EQUIP_RING_CHUNK;
+    s32 chunk;
+    s32 i;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, a);
+
+    for (chunk = 0; chunk < chunks; chunk++) {
+        Vtx* vtx = Graph_Alloc(play->state.gfxCtx, (EQUIP_RING_CHUNK + 1) * 2 * sizeof(Vtx));
+
+        for (i = 0; i <= EQUIP_RING_CHUNK; i++) {
+            f32 ang = (f32)(chunk * EQUIP_RING_CHUNK + i) * (6.2831853f / (f32)EQUIP_OVAL_SEGMENTS);
+            f32 ca = cosf(ang);
+            f32 sa = sinf(ang);
+            Vtx* vo = &vtx[i * 2];     // ponto externo
+            Vtx* vi = &vtx[i * 2 + 1]; // ponto interno
+
+            vo->v.ob[0] = (s16)(cx + hwO * ca + (ca >= 0.0f ? 0.5f : -0.5f));
+            vo->v.ob[1] = (s16)(cy + hhO * sa + (sa >= 0.0f ? 0.5f : -0.5f));
+            vi->v.ob[0] = (s16)(cx + hwI * ca + (ca >= 0.0f ? 0.5f : -0.5f));
+            vi->v.ob[1] = (s16)(cy + hhI * sa + (sa >= 0.0f ? 0.5f : -0.5f));
+            vo->v.ob[2] = vi->v.ob[2] = 0;
+            vo->v.flag = vi->v.flag = 0;
+            vo->v.tc[0] = vo->v.tc[1] = vi->v.tc[0] = vi->v.tc[1] = 0;
+            vo->v.cn[0] = vo->v.cn[1] = vo->v.cn[2] = vo->v.cn[3] = 255;
+            vi->v.cn[0] = vi->v.cn[1] = vi->v.cn[2] = vi->v.cn[3] = 255;
+        }
+
+        gSPVertex(POLY_OPA_DISP++, vtx, (EQUIP_RING_CHUNK + 1) * 2, 0);
+        for (i = 0; i < EQUIP_RING_CHUNK; i++) {
+            // vertices: externo i = 2i, interno i = 2i+1, externo i+1 = 2i+2, interno i+1 = 2i+3 (sentido anti-horario)
+            gSP2Triangles(POLY_OPA_DISP++, 2 * i, 2 * i + 2, 2 * i + 3, 0, 2 * i, 2 * i + 3, 2 * i + 1, 0);
+        }
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Moldura oval do Link (menu em abas): a textura do framebuffer do Link recortada na elipse + anel dourado/marrom.
+static void KaleidoScope_DrawEquipOvalImage(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    s16 cx = EQUIP_OVAL_CX;
+    s16 cy = EQUIP_OVAL_CY + pauseCtx->offsetY;
+    const s32 width = PAUSE_EQUIP_PLAYER_WIDTH;
+    const s32 textureHeight = 4096 / (width * 2);
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    // 1) Link: mesma sequencia de DrawEquipmentImage (tile + framebuffer), mas com filtro bilinear, porque o
+    // oval e bem maior que o quadro antigo.
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
+
+    gDPSetTileCustom(POLY_OPA_DISP++, G_IM_FMT_RGBA, G_IM_SIZ_16b, width, textureHeight, 0, G_TX_NOMIRROR | G_TX_CLAMP,
+                     G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+    gDPSetTextureImage(POLY_OPA_DISP++, G_IM_FMT_RGBA, G_IM_SIZ_16b, width, pauseCtx->playerSegment);
+    gDPLoadSync(POLY_OPA_DISP++);
+    gDPLoadTile(POLY_OPA_DISP++, G_TX_LOADTILE, 0, 0, (width - 1) << 2, (textureHeight - 1) << 2);
+    gDPSetTextureImageFB(POLY_OPA_DISP++, G_IM_FMT_RGBA, G_IM_SIZ_16b, width, gPauseLinkFrameBuffer);
+
+    KaleidoScope_EquipDrawOvalFill(play, cx, cy, EQUIP_OVAL_HW, EQUIP_OVAL_HH);
+
+    // 2) Aneis (cor lisa): sombra escura por fora e linha dourada por cima da borda da imagem
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+    KaleidoScope_EquipDrawOvalRing(play, cx, cy, EQUIP_OVAL_HW + 6, EQUIP_OVAL_HH + 6, EQUIP_OVAL_HW + 2,
+                                   EQUIP_OVAL_HH + 2, 38, 29, 20, alpha);
+    KaleidoScope_EquipDrawOvalRing(play, cx, cy, EQUIP_OVAL_HW + 3, EQUIP_OVAL_HH + 3, EQUIP_OVAL_HW - 1,
+                                   EQUIP_OVAL_HH - 1, 164, 128, 74, alpha);
+
+    // Restaura o estado grafico esperado pelo resto da pagina
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_POINT);
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -1366,7 +1558,12 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
     // gSPSegment(POLY_OPA_DISP++, 0x0C, pauseCtx->iconItemAltSegment);
 
     Gfx_SetupDL_42Opa(play->state.gfxCtx);
-    KaleidoScope_DrawEquipmentImage(play, pauseCtx->playerSegment, PAUSE_EQUIP_PLAYER_WIDTH, PAUSE_EQUIP_PLAYER_HEIGHT);
+    if (tabbedLayout) {
+        KaleidoScope_DrawEquipOvalImage(play);
+    } else {
+        KaleidoScope_DrawEquipmentImage(play, pauseCtx->playerSegment, PAUSE_EQUIP_PLAYER_WIDTH,
+                                        PAUSE_EQUIP_PLAYER_HEIGHT);
+    }
 
     if (gUpgradeMasks[0]) {}
 

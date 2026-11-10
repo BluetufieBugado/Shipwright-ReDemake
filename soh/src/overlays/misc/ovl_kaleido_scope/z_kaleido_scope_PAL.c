@@ -1446,6 +1446,7 @@ extern s16 KaleidoScope_GetItemSlotFrameBottom(s16 slot);
 extern bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx);
 extern void KaleidoScope_GetEquipSlotCenter(s16 slot, s16* x, s16* y);
 extern s16 KaleidoScope_GetEquipIconSize(void);
+extern s16 KaleidoScope_GetEquipSlotIconSize(s16 slot);
 extern void KaleidoScope_GetEquipLinkImagePos(s16* x, s16* top);
 extern s16 KaleidoScope_GetEquipArrowShiftInfo(bool right);
 
@@ -3432,11 +3433,13 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
         s16 slot;
         s16 slotX;
         s16 slotY;
-        s16 iconHalf = KaleidoScope_GetEquipIconSize() / 2;
+        s16 iconHalf;
 
         for (slot = 0; slot < 16; slot++) {
             Vtx* v = &pauseCtx->equipVtx[slot * 4];
 
+            // Cada linha tem seu tamanho de icone (espadas > escudos > tunicas)
+            iconHalf = KaleidoScope_GetEquipSlotIconSize(slot) / 2;
             KaleidoScope_GetEquipSlotCenter(slot, &slotX, &slotY);
 
             v[0].v.ob[0] = v[2].v.ob[0] = slotX - iconHalf;
@@ -3551,6 +3554,18 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
         pauseCtx->equipVtx[81].v.ob[0] = pauseCtx->equipVtx[83].v.ob[0] = linkX + 64;
         pauseCtx->equipVtx[80].v.ob[1] = pauseCtx->equipVtx[81].v.ob[1] = linkTop + pauseCtx->offsetY;
         pauseCtx->equipVtx[82].v.ob[1] = pauseCtx->equipVtx[83].v.ob[1] = linkTop + pauseCtx->offsetY - 32;
+    } else {
+        // Layout classico: o quadrilatero continua 64 x 112, mas o framebuffer do Link tem outra proporcao.
+        // Usa so a faixa central da textura (mesma proporcao 64:112) para o Link nao ficar esticado.
+        s32 cropW = (PAUSE_EQUIP_PLAYER_HEIGHT * 64) / 112;
+
+        if (cropW < PAUSE_EQUIP_PLAYER_WIDTH) {
+            s16 u0 = ((PAUSE_EQUIP_PLAYER_WIDTH - cropW) / 2) << 5;
+            s16 u1 = u0 + (cropW << 5);
+
+            pauseCtx->equipVtx[80].v.tc[0] = pauseCtx->equipVtx[82].v.tc[0] = u0;
+            pauseCtx->equipVtx[81].v.tc[0] = pauseCtx->equipVtx[83].v.tc[0] = u1;
+        }
     }
 
     pauseCtx->questVtx = Graph_Alloc(gfxCtx, 188 * sizeof(Vtx));
