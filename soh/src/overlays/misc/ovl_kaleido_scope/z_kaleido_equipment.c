@@ -127,6 +127,85 @@ void KaleidoScope_DrawAButton(PlayState* play, Vtx* vtx, int16_t xTranslate, int
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx);
+
+// Enquadramento do Link na aba Equipamento (menu em abas). Os valores sao deslocamentos sobre a pose base abaixo,
+// e a pose atual se aproxima do destino a cada desenho (transicao suave em vez de troca instantanea).
+typedef struct {
+    f32 dx;       // deslocamento de pos.x
+    f32 dy;       // deslocamento de pos.y
+    f32 dz;       // deslocamento de pos.z
+    f32 scaleMul; // multiplicador de scale
+    s16 rotAdd;   // somado a rot.y (0x8000 = de costas)
+} EquipLinkFraming;
+
+typedef enum {
+    EQUIP_FRAMING_DEFAULT,
+    EQUIP_FRAMING_BACK,  // espada selecionada: de costas, espada embainhada visivel
+    EQUIP_FRAMING_TORSO, // tunica selecionada: zoom no torso
+} EquipLinkFramingId;
+
+static EquipLinkFraming sEquipFramings[] = {
+    { 0.0f, 0.0f, 0.0f, 1.0f, 0 },
+    { 0.0f, 0.0f, 0.0f, 1.0f, (s16)0x8000 },
+    { 0.0f, -60.0f, 0.0f, 1.8f, 0 }, // valores iniciais: ajustar por CVar (ver KaleidoScope_GetEquipLinkFraming)
+};
+
+static EquipLinkFraming sEquipFramingCur = { 0.0f, 0.0f, 0.0f, 1.0f, 0 };
+static u32 sEquipFramingLastFrame = 0;
+
+static EquipLinkFramingId KaleidoScope_GetEquipLinkFramingId(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s16 slot;
+
+    if (!KaleidoScope_IsTabbedEquipPage(pauseCtx) || pauseCtx->cursorSpecialPos != 0) {
+        return EQUIP_FRAMING_DEFAULT;
+    }
+
+    slot = pauseCtx->cursorPoint[PAUSE_EQUIP];
+    if ((slot & 3) == 0) { // coluna das melhorias
+        return EQUIP_FRAMING_DEFAULT;
+    }
+
+    switch (slot >> 2) {
+        case 0:
+            return EQUIP_FRAMING_BACK;
+        case 2:
+            return EQUIP_FRAMING_TORSO;
+        default:
+            return EQUIP_FRAMING_DEFAULT;
+    }
+}
+
+// Destino do enquadramento. O zoom da tunica pode ser ajustado ao vivo pelo console:
+//   set gEnhancements.EquipPose.TunicY -60   set gEnhancements.EquipPose.TunicScale 1.8
+static EquipLinkFraming KaleidoScope_GetEquipLinkFraming(EquipLinkFramingId id) {
+    EquipLinkFraming f = sEquipFramings[id];
+
+    if (id == EQUIP_FRAMING_TORSO) {
+        f.dy = CVarGetFloat(CVAR_ENHANCEMENT("EquipPose.TunicY"), f.dy);
+        f.scaleMul = CVarGetFloat(CVAR_ENHANCEMENT("EquipPose.TunicScale"), f.scaleMul);
+    }
+    return f;
+}
+
+static void KaleidoScope_UpdateEquipLinkFraming(PlayState* play) {
+    EquipLinkFraming target = KaleidoScope_GetEquipLinkFraming(KaleidoScope_GetEquipLinkFramingId(play));
+    EquipLinkFraming* cur = &sEquipFramingCur;
+
+    // Primeira vez nesta visita a pagina (ou fora da pagina por um tempo): comeca ja no destino
+    if ((u32)(play->state.frames - sEquipFramingLastFrame) > 2) {
+        *cur = target;
+    } else {
+        Math_SmoothStepToF(&cur->dx, target.dx, 0.3f, 8.0f, 0.05f);
+        Math_SmoothStepToF(&cur->dy, target.dy, 0.3f, 8.0f, 0.05f);
+        Math_SmoothStepToF(&cur->dz, target.dz, 0.3f, 8.0f, 0.05f);
+        Math_SmoothStepToF(&cur->scaleMul, target.scaleMul, 0.3f, 0.2f, 0.001f);
+        Math_SmoothStepToS(&cur->rotAdd, target.rotAdd, 4, 0x1000, 0x40);
+    }
+    sEquipFramingLastFrame = play->state.frames;
+}
+
 void KaleidoScope_DrawPlayerWork(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Vec3f pos;
@@ -151,11 +230,22 @@ void KaleidoScope_DrawPlayerWork(PlayState* play) {
         scale = 0.047f;
     }
 
+    // Menu em abas: aplica o enquadramento (costas / zoom no torso) com transicao suave
+    if (KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+        KaleidoScope_UpdateEquipLinkFraming(play);
+        pos.x += sEquipFramingCur.dx;
+        pos.y += sEquipFramingCur.dy;
+        pos.z += sEquipFramingCur.dz;
+        scale *= sEquipFramingCur.scaleMul;
+    } else {
+        sEquipFramingCur = sEquipFramings[EQUIP_FRAMING_DEFAULT];
+    }
+
     // SOH [Port] Draw the pause Link on a separate framebuffer starting in the work buffer
     OPEN_DISPS(play->state.gfxCtx);
     gsSPSetFB(WORK_DISP++, gPauseLinkFrameBuffer);
 
-    rot.y = 32300;
+    rot.y = 32300 + (KaleidoScope_IsTabbedEquipPage(pauseCtx) ? sEquipFramingCur.rotAdd : 0);
     rot.x = rot.z = 0;
     Player_DrawPause(play, pauseCtx->playerSegment, &pauseCtx->playerSkelAnime, &pos, &rot, scale,
                      SWORD_EQUIP_TO_PLAYER(CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD)),
