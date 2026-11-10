@@ -141,14 +141,16 @@ typedef struct {
 
 typedef enum {
     EQUIP_FRAMING_DEFAULT,
-    EQUIP_FRAMING_BACK,  // espada selecionada: de costas, espada embainhada visivel
-    EQUIP_FRAMING_TORSO, // tunica selecionada: zoom no torso
+    EQUIP_FRAMING_SWORD,  // espada selecionada: gira para mostrar a espada na mao
+    EQUIP_FRAMING_SHIELD, // escudo selecionado: gira para mostrar o escudo no braco
+    EQUIP_FRAMING_TORSO,  // tunica selecionada: zoom no torso
 } EquipLinkFramingId;
 
 static EquipLinkFraming sEquipFramings[] = {
     { 0.0f, 0.0f, 0.0f, 1.0f, 0 },
-    { 0.0f, 0.0f, 0.0f, 1.0f, (s16)0x8000 },
-    { 0.0f, -60.0f, 0.0f, 1.8f, 0 }, // valores iniciais: ajustar por CVar (ver KaleidoScope_GetEquipLinkFraming)
+    { 0.0f, 0.0f, 0.0f, 1.0f, -0x3000 }, // espada: valores iniciais, ajustar por CVar
+    { 0.0f, 0.0f, 0.0f, 1.0f, 0x3000 },  // escudo: valores iniciais, ajustar por CVar
+    { 0.0f, -60.0f, 0.0f, 1.8f, 0 },     // tunica: valores iniciais, ajustar por CVar
 };
 
 static EquipLinkFraming sEquipFramingCur = { 0.0f, 0.0f, 0.0f, 1.0f, 0 };
@@ -169,7 +171,9 @@ static EquipLinkFramingId KaleidoScope_GetEquipLinkFramingId(PlayState* play) {
 
     switch (slot >> 2) {
         case 0:
-            return EQUIP_FRAMING_BACK;
+            return EQUIP_FRAMING_SWORD;
+        case 1:
+            return EQUIP_FRAMING_SHIELD;
         case 2:
             return EQUIP_FRAMING_TORSO;
         default:
@@ -179,10 +183,16 @@ static EquipLinkFramingId KaleidoScope_GetEquipLinkFramingId(PlayState* play) {
 
 // Destino do enquadramento. O zoom da tunica pode ser ajustado ao vivo pelo console:
 //   set gEnhancements.EquipPose.TunicY -60   set gEnhancements.EquipPose.TunicScale 1.8
+// O giro da espada/escudo (em unidades de angulo do jogo, 0x4000 = 90 graus; trocar o sinal inverte o lado):
+//   set gEnhancements.EquipPose.SwordRot -12288   set gEnhancements.EquipPose.ShieldRot 12288
 static EquipLinkFraming KaleidoScope_GetEquipLinkFraming(EquipLinkFramingId id) {
     EquipLinkFraming f = sEquipFramings[id];
 
-    if (id == EQUIP_FRAMING_TORSO) {
+    if (id == EQUIP_FRAMING_SWORD) {
+        f.rotAdd = (s16)CVarGetInteger(CVAR_ENHANCEMENT("EquipPose.SwordRot"), f.rotAdd);
+    } else if (id == EQUIP_FRAMING_SHIELD) {
+        f.rotAdd = (s16)CVarGetInteger(CVAR_ENHANCEMENT("EquipPose.ShieldRot"), f.rotAdd);
+    } else if (id == EQUIP_FRAMING_TORSO) {
         f.dy = CVarGetFloat(CVAR_ENHANCEMENT("EquipPose.TunicY"), f.dy);
         f.scaleMul = CVarGetFloat(CVAR_ENHANCEMENT("EquipPose.TunicScale"), f.scaleMul);
     }
