@@ -167,6 +167,373 @@ void KaleidoScope_DrawPlayerWork(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Menu em abas (CVar gEnhancements.TabbedPauseMenu): layout da aba Equipamento inspirado no remake.
+//
+// Posicao e tamanho de cada slot ficam na tabela abaixo (unidades locais da pagina, X para a direita, Y para cima).
+// O InitVertices (z_kaleido_scope_PAL.c), as molduras e a navegacao leem desta mesma fonte.
+// Os indices logicos continuam os do jogo: slot = cursorY * 4 + cursorX
+//   cursorY: 0 espadas, 1 escudos, 2 tunicas, 3 botas
+//   cursorX: 0 melhoria (bolsa/aljava, bombas, forca, escama), 1..3 equipamento
+// Assim a logica de equipar, a posse (gBitFlags) e os botoes C nao mudam.
+//
+// Disposicao (celulas de 34, moldura de 32, icone de 28):
+//   esquerda : coluna A = 4 melhorias, coluna B = 3 botas
+//   centro   : painel do Link
+//   direita  : espadas / escudos / tunicas (3 x 3)
+// ---------------------------------------------------------------------------------------------------------------
+#define EQUIP_FRAME_SIZE 32    // largura/altura da moldura
+#define EQUIP_FRAME_CUT 7      // corte dos cantos (octogono)
+#define EQUIP_FRAME_GROW 2     // quanto o slot selecionado cresce por lado
+#define EQUIP_ICON_SIZE 28     // lado do icone
+#define EQUIP_DRAW_EMPTY_FRAMES 1 // 1 = desenha moldura tambem nos slots que o jogador ainda nao tem
+
+// Imagem do Link (64 x 112): canto superior esquerdo
+#define EQUIP_LINK_X -50
+#define EQUIP_LINK_TOP 51
+// Painel escuro atras do Link
+#define EQUIP_LINK_PANEL_L -54
+#define EQUIP_LINK_PANEL_R 18
+#define EQUIP_LINK_PANEL_T 63
+#define EQUIP_LINK_PANEL_B -71
+
+// Deslocamento das setas de pagina (L/R), em unidades do painel de informacoes, para fora da grade
+#define EQUIP_ARROW_SHIFT_INFO 32
+
+// Centro {x, y} de cada slot, indexado por cursorY * 4 + cursorX
+static const s16 sEquipSlotCenter[16][2] = {
+    // linha 0: melhoria | espadas
+    { -112, 45 }, { 42, 28 }, { 76, 28 }, { 110, 28 },
+    // linha 1: melhoria | escudos
+    { -112, 11 }, { 42, -6 }, { 76, -6 }, { 110, -6 },
+    // linha 2: melhoria | tunicas
+    { -112, -23 }, { 42, -40 }, { 76, -40 }, { 110, -40 },
+    // linha 3: melhoria | botas (coluna B, a esquerda)
+    { -112, -57 }, { -78, 45 }, { -78, 11 }, { -78, -23 },
+};
+
+bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_EQUIP &&
+           !((pauseCtx->state >= 8) && (pauseCtx->state <= 0x11));
+}
+
+void KaleidoScope_GetEquipSlotCenter(s16 slot, s16* x, s16* y) {
+    *x = sEquipSlotCenter[slot][0];
+    *y = sEquipSlotCenter[slot][1];
+}
+
+s16 KaleidoScope_GetEquipIconSize(void) {
+    return EQUIP_ICON_SIZE;
+}
+
+void KaleidoScope_GetEquipLinkImagePos(s16* x, s16* top) {
+    *x = EQUIP_LINK_X;
+    *top = EQUIP_LINK_TOP;
+}
+
+// Deslocamento horizontal das setas de pagina (esquerda negativo, direita positivo)
+s16 KaleidoScope_GetEquipArrowShiftInfo(bool right) {
+    return right ? EQUIP_ARROW_SHIFT_INFO : -EQUIP_ARROW_SHIFT_INFO;
+}
+
+// O jogador tem o item/melhoria deste slot?
+static bool KaleidoScope_EquipSlotOwned(s16 slot) {
+    s16 row = slot >> 2;
+    s16 col = slot & 3;
+
+    if (col == 0) {
+        if (row == 0) {
+            return (CUR_UPG_VALUE(UPG_QUIVER) != 0) || (CUR_UPG_VALUE(UPG_BULLET_BAG) != 0);
+        }
+        return CUR_UPG_VALUE(row) != 0;
+    }
+    return (gBitFlags[slot - 1] & gSaveContext.inventory.equipment) != 0;
+}
+
+static bool KaleidoScope_EquipSlotEquipped(s16 slot) {
+    s16 row = slot >> 2;
+    s16 col = slot & 3;
+
+    return (col != 0) && (CUR_EQUIP_VALUE(row) == col);
+}
+
+// O cursor pode parar neste slot?
+static bool KaleidoScope_EquipSlotSelectable(s16 slot, bool pauseAnyCursor) {
+    if ((slot & 3) != 0 && pauseAnyCursor) {
+        return true;
+    }
+    return KaleidoScope_EquipSlotOwned(slot);
+}
+
+// dir: 0 esquerda, 1 direita, 2 cima, 3 baixo. Devolve o slot selecionavel mais proximo naquela direcao, ou -1.
+static s16 KaleidoScope_EquipFindSlotInDir(s16 cur, s32 dir, bool pauseAnyCursor) {
+    s16 best = -1;
+    s32 bestCost = 0x7FFFFFFF;
+    s16 s;
+
+    for (s = 0; s < 16; s++) {
+        s32 dx = sEquipSlotCenter[s][0] - sEquipSlotCenter[cur][0];
+        s32 dy = sEquipSlotCenter[s][1] - sEquipSlotCenter[cur][1];
+        s32 along;
+        s32 off;
+        s32 cost;
+
+        if (s == cur || !KaleidoScope_EquipSlotSelectable(s, pauseAnyCursor)) {
+            continue;
+        }
+
+        switch (dir) {
+            case 0:
+                along = -dx;
+                off = (dy < 0) ? -dy : dy;
+                break;
+            case 1:
+                along = dx;
+                off = (dy < 0) ? -dy : dy;
+                break;
+            case 2:
+                along = dy;
+                off = (dx < 0) ? -dx : dx;
+                break;
+            default:
+                along = -dy;
+                off = (dx < 0) ? -dx : dx;
+                break;
+        }
+
+        if (along < 4 || off > along * 2) {
+            continue;
+        }
+
+        cost = along + off * 2;
+        if (cost < bestCost) {
+            bestCost = cost;
+            best = s;
+        }
+    }
+
+    return best;
+}
+
+// Entrada vinda de uma seta de pagina: o slot mais proximo da borda (esquerda ou direita), de cima para baixo.
+static s16 KaleidoScope_EquipFindEntrySlot(bool fromLeft) {
+    s16 best = -1;
+    s16 s;
+
+    for (s = 0; s < 16; s++) {
+        if (!KaleidoScope_EquipSlotOwned(s)) {
+            continue;
+        }
+        if (best < 0) {
+            best = s;
+            continue;
+        }
+        if (fromLeft) {
+            if ((sEquipSlotCenter[s][0] < sEquipSlotCenter[best][0]) ||
+                ((sEquipSlotCenter[s][0] == sEquipSlotCenter[best][0]) &&
+                 (sEquipSlotCenter[s][1] > sEquipSlotCenter[best][1]))) {
+                best = s;
+            }
+        } else {
+            if ((sEquipSlotCenter[s][0] > sEquipSlotCenter[best][0]) ||
+                ((sEquipSlotCenter[s][0] == sEquipSlotCenter[best][0]) &&
+                 (sEquipSlotCenter[s][1] > sEquipSlotCenter[best][1]))) {
+                best = s;
+            }
+        }
+    }
+
+    return best;
+}
+
+static void KaleidoScope_EquipSetCursorSlot(PauseContext* pauseCtx, s16 slot) {
+    pauseCtx->cursorPoint[PAUSE_EQUIP] = slot;
+    pauseCtx->cursorX[PAUSE_EQUIP] = slot & 3;
+    pauseCtx->cursorY[PAUSE_EQUIP] = slot >> 2;
+}
+
+// Navegacao do cursor por posicao na tela (substitui os dois loops de grade 4x4 do jogo original)
+static void KaleidoScope_EquipTabbedMoveCursor(PlayState* play, bool dpad, bool pauseAnyCursor) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+    s16 cur = pauseCtx->cursorPoint[PAUSE_EQUIP];
+    s16 next;
+
+    if ((pauseCtx->stickRelX < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT))) {
+        next = KaleidoScope_EquipFindSlotInDir(cur, 0, pauseAnyCursor);
+        if (next < 0) {
+            KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
+            return;
+        }
+        cur = next;
+    } else if ((pauseCtx->stickRelX > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DRIGHT))) {
+        next = KaleidoScope_EquipFindSlotInDir(cur, 1, pauseAnyCursor);
+        if (next < 0) {
+            KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+            return;
+        }
+        cur = next;
+    }
+
+    if ((pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP))) {
+        next = KaleidoScope_EquipFindSlotInDir(cur, 2, pauseAnyCursor);
+        if (next >= 0) {
+            cur = next;
+        }
+    } else if ((pauseCtx->stickRelY < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DDOWN))) {
+        next = KaleidoScope_EquipFindSlotInDir(cur, 3, pauseAnyCursor);
+        if (next >= 0) {
+            cur = next;
+        }
+    }
+
+    KaleidoScope_EquipSetCursorSlot(pauseCtx, cur);
+}
+
+// Entrada vinda das setas de pagina (fromLeft = veio da seta esquerda).
+static void KaleidoScope_EquipTabbedEnter(PlayState* play, bool fromLeft) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s16 slot = KaleidoScope_EquipFindEntrySlot(fromLeft);
+
+    if (slot < 0) {
+        KaleidoScope_MoveCursorToSpecialPos(play, fromLeft ? PAUSE_CURSOR_PAGE_RIGHT : PAUSE_CURSOR_PAGE_LEFT);
+    } else {
+        KaleidoScope_EquipSetCursorSlot(pauseCtx, slot);
+    }
+}
+
+// Poligono de 8 pontos (retangulo com os cantos cortados), em sentido anti-horario
+static void KaleidoScope_EquipDrawPoly(PlayState* play, s16 cx, s16 cy, s16 hw, s16 hh, s16 cut, u8 r, u8 g, u8 b,
+                                       u8 a) {
+    Vtx* vtx = Graph_Alloc(play->state.gfxCtx, 8 * sizeof(Vtx));
+    s16 px[8];
+    s16 py[8];
+    s32 i;
+
+    if (cut > hw) {
+        cut = hw;
+    }
+    if (cut > hh) {
+        cut = hh;
+    }
+
+    px[0] = cx - hw + cut; py[0] = cy + hh;
+    px[1] = cx - hw;       py[1] = cy + hh - cut;
+    px[2] = cx - hw;       py[2] = cy - hh + cut;
+    px[3] = cx - hw + cut; py[3] = cy - hh;
+    px[4] = cx + hw - cut; py[4] = cy - hh;
+    px[5] = cx + hw;       py[5] = cy - hh + cut;
+    px[6] = cx + hw;       py[6] = cy + hh - cut;
+    px[7] = cx + hw - cut; py[7] = cy + hh;
+
+    for (i = 0; i < 8; i++) {
+        vtx[i].v.ob[0] = px[i];
+        vtx[i].v.ob[1] = py[i];
+        vtx[i].v.ob[2] = 0;
+        vtx[i].v.flag = 0;
+        vtx[i].v.tc[0] = 0;
+        vtx[i].v.tc[1] = 0;
+        vtx[i].v.cn[0] = 255;
+        vtx[i].v.cn[1] = 255;
+        vtx[i].v.cn[2] = 255;
+        vtx[i].v.cn[3] = 255;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, a);
+    gSPVertex(POLY_OPA_DISP++, vtx, 8, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 0, 1, 2, 0, 0, 2, 3, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 0, 3, 4, 0, 0, 4, 5, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 0, 5, 6, 0, 0, 6, 7, 0);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Moldura de um slot: borda + miolo
+static void KaleidoScope_EquipDrawFrame(PlayState* play, s16 cx, s16 cy, s16 half, bool selected, bool equipped,
+                                        bool owned, u8 alpha) {
+    u8 br, bg, bb; // borda
+    u8 fr, fg, fb; // miolo
+
+    if (selected) {
+        br = 255; bg = 250; bb = 230;
+        if (equipped) {
+            fr = 176; fg = 128; fb = 24;
+        } else {
+            fr = 70; fg = 54; fb = 34;
+        }
+    } else if (equipped) {
+        br = 214; bg = 170; bb = 70;
+        fr = 176; fg = 128; fb = 24;
+    } else if (owned) {
+        br = 96; bg = 76; bb = 50;
+        fr = 22; fg = 17; fb = 13;
+    } else {
+        br = 62; bg = 49; bb = 34;
+        fr = 14; fg = 11; fb = 9;
+    }
+
+    KaleidoScope_EquipDrawPoly(play, cx, cy, half, half, EQUIP_FRAME_CUT, br, bg, bb, alpha);
+    KaleidoScope_EquipDrawPoly(play, cx, cy, half - 2, half - 2, EQUIP_FRAME_CUT - 1, fr, fg, fb, alpha);
+}
+
+// Painel do Link e molduras dos slots, desenhados antes dos icones (mesma matriz dos icones, entao acompanham
+// o deslocamento da pagina e a animacao de abrir/fechar).
+static void KaleidoScope_DrawEquipFrames(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    s16 selectedSlot = (pauseCtx->cursorSpecialPos == 0) ? pauseCtx->cursorPoint[PAUSE_EQUIP] : -1;
+    s16 half = EQUIP_FRAME_SIZE / 2;
+    s16 slot;
+    s16 x;
+    s16 y;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_42Opa(play->state.gfxCtx);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+
+    // Painel do Link
+    KaleidoScope_EquipDrawPoly(play, (EQUIP_LINK_PANEL_L + EQUIP_LINK_PANEL_R) / 2,
+                               (EQUIP_LINK_PANEL_T + EQUIP_LINK_PANEL_B) / 2 + pauseCtx->offsetY,
+                               (EQUIP_LINK_PANEL_R - EQUIP_LINK_PANEL_L) / 2,
+                               (EQUIP_LINK_PANEL_T - EQUIP_LINK_PANEL_B) / 2, 10, 62, 49, 34, alpha);
+    KaleidoScope_EquipDrawPoly(play, (EQUIP_LINK_PANEL_L + EQUIP_LINK_PANEL_R) / 2,
+                               (EQUIP_LINK_PANEL_T + EQUIP_LINK_PANEL_B) / 2 + pauseCtx->offsetY,
+                               (EQUIP_LINK_PANEL_R - EQUIP_LINK_PANEL_L) / 2 - 2,
+                               (EQUIP_LINK_PANEL_T - EQUIP_LINK_PANEL_B) / 2 - 2, 9, 12, 10, 9, alpha);
+
+    // Molduras (o slot selecionado por ultimo, para ficar por cima)
+    for (slot = 0; slot < 16; slot++) {
+        bool owned = KaleidoScope_EquipSlotOwned(slot);
+
+        if (slot == selectedSlot || (!owned && !EQUIP_DRAW_EMPTY_FRAMES)) {
+            continue;
+        }
+
+        KaleidoScope_GetEquipSlotCenter(slot, &x, &y);
+        KaleidoScope_EquipDrawFrame(play, x, y + pauseCtx->offsetY, half, false, KaleidoScope_EquipSlotEquipped(slot),
+                                    owned, alpha);
+    }
+
+    if (selectedSlot >= 0) {
+        KaleidoScope_GetEquipSlotCenter(selectedSlot, &x, &y);
+        KaleidoScope_EquipDrawFrame(play, x, y + pauseCtx->offsetY, half + EQUIP_FRAME_GROW, true,
+                                    KaleidoScope_EquipSlotEquipped(selectedSlot), true, alpha);
+    }
+
+    // Restaura o estado grafico esperado pelo resto da pagina
+    gDPPipeSync(POLY_OPA_DISP++);
+    Gfx_SetupDL_42Opa(play->state.gfxCtx);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void KaleidoScope_DrawEquipment(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
@@ -185,6 +552,7 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
     s16 cursorX;
     s16 cursorY;
     s16 oldCursorPoint;
+    bool tabbedLayout = KaleidoScope_IsTabbedEquipPage(pauseCtx);
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -193,7 +561,7 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
     gDPSetEnvColor(POLY_OPA_DISP++, ZREG(43), ZREG(44), ZREG(45), 0);
 
     for (i = 0, j = 64; i < 4; i++, j += 4) {
-        if (CUR_EQUIP_VALUE(i) != 0) {
+        if ((CUR_EQUIP_VALUE(i) != 0) && !tabbedLayout) {
             gDPPipeSync(POLY_OPA_DISP++);
             gSPVertex(POLY_OPA_DISP++, &pauseCtx->equipVtx[j], 4, 0);
 
@@ -223,6 +591,10 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
             cursorY = pauseCtx->cursorY[PAUSE_EQUIP];
 
             cursorMoveResult = 0;
+            if (tabbedLayout) {
+                KaleidoScope_EquipTabbedMoveCursor(play, dpad, pauseAnyCursor);
+                cursorMoveResult = 4;
+            }
             while (cursorMoveResult == 0) {
                 if ((pauseCtx->stickRelX < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT))) {
                     if (pauseCtx->cursorX[PAUSE_EQUIP] != 0) {
@@ -312,7 +684,7 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 
             if (cursorMoveResult) {}
 
-            cursorMoveResult = 0;
+            cursorMoveResult = tabbedLayout ? 4 : 0;
             while (cursorMoveResult == 0) {
                 if ((pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP))) {
                     if (pauseCtx->cursorY[PAUSE_EQUIP] != 0) {
@@ -369,7 +741,10 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                                      &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
                 cursorPoint = cursorX = cursorY = 0;
-                while (true) {
+                if (tabbedLayout) {
+                    KaleidoScope_EquipTabbedEnter(play, true);
+                }
+                while (!tabbedLayout) {
                     if (cursorX == 0) {
                         if (cursorY == 0) {
                             if (CUR_UPG_VALUE(UPG_BULLET_BAG) != 0) {
@@ -417,7 +792,10 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 
                 cursorPoint = cursorX = 3;
                 cursorY = 0;
-                while (true) {
+                if (tabbedLayout) {
+                    KaleidoScope_EquipTabbedEnter(play, false);
+                }
+                while (!tabbedLayout) {
                     if (cursorX == 0) {
                         if (CUR_UPG_VALUE(cursorY) != 0) {
                             pauseCtx->cursorPoint[PAUSE_EQUIP] = cursorPoint;
@@ -745,6 +1123,13 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                             pauseCtx->equipVtx[j].v.ob[1] + 2;
                         pauseCtx->equipVtx[j + 2].v.ob[1] = pauseCtx->equipVtx[j + 3].v.ob[1] =
                             pauseCtx->equipVtx[j + 2].v.ob[1] - 4;
+                        if (tabbedLayout) {
+                            // Crescimento simetrico (+2 por lado) no layout em abas
+                            pauseCtx->equipVtx[j + 1].v.ob[0] = pauseCtx->equipVtx[j + 3].v.ob[0] =
+                                pauseCtx->equipVtx[j + 1].v.ob[0] - 2;
+                            pauseCtx->equipVtx[j + 2].v.ob[1] = pauseCtx->equipVtx[j + 3].v.ob[1] =
+                                pauseCtx->equipVtx[j + 2].v.ob[1] + 2;
+                        }
                     }
                 }
             }
@@ -765,6 +1150,10 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
             pauseCtx->equipVtx[equipVtxIndex].v.ob[1] + 2;
         pauseCtx->equipVtx[equipVtxIndex + 2].v.ob[1] = pauseCtx->equipVtx[equipVtxIndex + 3].v.ob[1] =
             pauseCtx->equipVtx[equipVtxIndex + 2].v.ob[1] - 4;
+    }
+
+    if (tabbedLayout) {
+        KaleidoScope_DrawEquipFrames(play);
     }
 
     Gfx_SetupDL_42Opa(play->state.gfxCtx);

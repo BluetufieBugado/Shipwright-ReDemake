@@ -1442,6 +1442,17 @@ extern s16 KaleidoScope_GetItemSlotFrameRight(s16 slot);
 extern s16 KaleidoScope_GetItemSlotFrameBottom(s16 slot);
 #define ITEM_DETAIL_X 236
 
+// Layout da aba Equipamento no menu em abas (definido em z_kaleido_equipment.c)
+extern bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx);
+extern void KaleidoScope_GetEquipSlotCenter(s16 slot, s16* x, s16* y);
+extern s16 KaleidoScope_GetEquipIconSize(void);
+extern void KaleidoScope_GetEquipLinkImagePos(s16* x, s16* top);
+extern s16 KaleidoScope_GetEquipArrowShiftInfo(bool right);
+
+// 1 = esconde os icones "L"/"R" das setas de pagina na aba Equipamento (como ja e feito na aba Itens), porque a
+// barra de abas ja mostra as teclas.
+#define EQUIP_HIDE_PAGE_ARROWS 1
+
 static f32 KaleidoScope_GetItemPageShiftX(PauseContext* pauseCtx) {
     if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0 || pauseCtx->pageIndex != PAUSE_ITEM) {
         return 0.0f;
@@ -1460,6 +1471,12 @@ static s16 KaleidoScope_GetItemPageShiftInfoX(PauseContext* pauseCtx) {
 // (faixa azul com o nome) nao e mais desenhado.
 static bool KaleidoScope_IsTabbedItemPage(PauseContext* pauseCtx) {
     return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_ITEM;
+}
+
+// Icones L/R das setas de pagina: escondidos nas abas Itens e (opcionalmente) Equipamento
+static bool KaleidoScope_HidePageArrowIcons(PauseContext* pauseCtx) {
+    return KaleidoScope_IsTabbedItemPage(pauseCtx) ||
+           (EQUIP_HIDE_PAGE_ARROWS && KaleidoScope_IsTabbedEquipPage(pauseCtx));
 }
 
 void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
@@ -1683,8 +1700,10 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
             gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
-            POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->equipPageVtx,
-                                                          sEquipmentTexs[gSaveContext.language]);
+            if (!KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+                POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->equipPageVtx,
+                                                              sEquipmentTexs[gSaveContext.language]);
+            }
 
             KaleidoScope_DrawEquipment(play);
         }
@@ -1823,12 +1842,16 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
                 gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
-                POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->equipPageVtx,
-                                                              sEquipmentTexs[gSaveContext.language]);
+                // Menu em abas: o fundo e as molduras sao desenhados por codigo (KaleidoScope_DrawEquipment) e a
+                // moldura dourada faz o papel do cursor de cantos amarelos
+                if (!KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+                    POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->equipPageVtx,
+                                                                  sEquipmentTexs[gSaveContext.language]);
+                }
 
                 KaleidoScope_DrawEquipment(play);
 
-                if (pauseCtx->cursorSpecialPos == 0) {
+                if ((pauseCtx->cursorSpecialPos == 0) && !KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
                     KaleidoScope_DrawCursor(play, PAUSE_EQUIP);
                 }
                 break;
@@ -2132,10 +2155,17 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
 
     pauseCtx->infoPanelVtx[5].v.ob[0] = pauseCtx->infoPanelVtx[7].v.ob[0] = pauseCtx->infoPanelVtx[4].v.ob[0] + 72;
 
-    s16 pageArrowShift = KaleidoScope_GetItemPageShiftInfoX(pauseCtx);
+    s16 pageArrowShiftL = KaleidoScope_GetItemPageShiftInfoX(pauseCtx);
+    s16 pageArrowShiftR = pageArrowShiftL;
+
+    // Aba Equipamento: as setas vao para fora da grade (esquerda para a esquerda, direita para a direita)
+    if (KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+        pageArrowShiftL = KaleidoScope_GetEquipArrowShiftInfo(false);
+        pageArrowShiftR = KaleidoScope_GetEquipArrowShiftInfo(true);
+    }
 
     if ((pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT) && (pauseCtx->unk_1E4 == 0)) {
-        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = (WREG(16) + pageArrowShift);
+        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = (WREG(16) + pageArrowShiftL);
 
         pauseCtx->infoPanelVtx[9].v.ob[0] = pauseCtx->infoPanelVtx[11].v.ob[0] = pauseCtx->infoPanelVtx[8].v.ob[0] + 24;
 
@@ -2144,7 +2174,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         pauseCtx->infoPanelVtx[10].v.ob[1] = pauseCtx->infoPanelVtx[11].v.ob[1] =
             pauseCtx->infoPanelVtx[8].v.ob[1] - 32;
     } else {
-        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = (WREG(16) + pageArrowShift) + 3;
+        pauseCtx->infoPanelVtx[8].v.ob[0] = pauseCtx->infoPanelVtx[10].v.ob[0] = (WREG(16) + pageArrowShiftL) + 3;
 
         pauseCtx->infoPanelVtx[9].v.ob[0] = pauseCtx->infoPanelVtx[11].v.ob[0] = pauseCtx->infoPanelVtx[8].v.ob[0] + 18;
 
@@ -2155,7 +2185,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
     }
 
     if ((pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_RIGHT) && (pauseCtx->unk_1E4 == 0)) {
-        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = (WREG(17) + pageArrowShift);
+        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = (WREG(17) + pageArrowShiftR);
 
         pauseCtx->infoPanelVtx[13].v.ob[0] = pauseCtx->infoPanelVtx[15].v.ob[0] =
             pauseCtx->infoPanelVtx[12].v.ob[0] + 24;
@@ -2165,7 +2195,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         pauseCtx->infoPanelVtx[14].v.ob[1] = pauseCtx->infoPanelVtx[15].v.ob[1] =
             pauseCtx->infoPanelVtx[12].v.ob[1] - 32;
     } else {
-        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = (WREG(17) + pageArrowShift) + 3;
+        pauseCtx->infoPanelVtx[12].v.ob[0] = pauseCtx->infoPanelVtx[14].v.ob[0] = (WREG(17) + pageArrowShiftR) + 3;
 
         pauseCtx->infoPanelVtx[13].v.ob[0] = pauseCtx->infoPanelVtx[15].v.ob[0] =
             pauseCtx->infoPanelVtx[12].v.ob[0] + 18;
@@ -2211,7 +2241,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         }
     }
 
-    if (!KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+    if (!KaleidoScope_HidePageArrowIcons(pauseCtx)) {
         gSPDisplayList(POLY_OPA_DISP++, gLButtonIconDL);
     }
 
@@ -2227,7 +2257,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         }
     }
 
-    if (!KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+    if (!KaleidoScope_HidePageArrowIcons(pauseCtx)) {
         gSPDisplayList(POLY_OPA_DISP++, gRButtonIconDL);
     }
 
@@ -3397,6 +3427,25 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
         }
     }
 
+    // Menu em abas: cada slot de equipamento vem da tabela de layout (z_kaleido_equipment.c)
+    if (KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+        s16 slot;
+        s16 slotX;
+        s16 slotY;
+        s16 iconHalf = KaleidoScope_GetEquipIconSize() / 2;
+
+        for (slot = 0; slot < 16; slot++) {
+            Vtx* v = &pauseCtx->equipVtx[slot * 4];
+
+            KaleidoScope_GetEquipSlotCenter(slot, &slotX, &slotY);
+
+            v[0].v.ob[0] = v[2].v.ob[0] = slotX - iconHalf;
+            v[1].v.ob[0] = v[3].v.ob[0] = slotX + iconHalf;
+            v[0].v.ob[1] = v[1].v.ob[1] = slotY + iconHalf + pauseCtx->offsetY;
+            v[2].v.ob[1] = v[3].v.ob[1] = slotY - iconHalf + pauseCtx->offsetY;
+        }
+    }
+
     for (phi_t3 = 0; phi_t3 < 4; phi_t3++, phi_t4 += 4) {
         if (CUR_EQUIP_VALUE(phi_t3) != 0) {
             phi_t2 = (CUR_EQUIP_VALUE(phi_t3) + D_8082B134[phi_t3] - 1) * 4;
@@ -3484,6 +3533,20 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
         }
 
         phi_t4 += 4;
+    }
+
+    // Menu em abas: a imagem do Link (quadrilatero 80..83) fica no painel central. O desenho dela estende a
+    // altura em 80 unidades (ver KaleidoScope_DrawEquipmentImage), entao aqui a altura inicial e 32.
+    if (KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+        s16 linkX;
+        s16 linkTop;
+
+        KaleidoScope_GetEquipLinkImagePos(&linkX, &linkTop);
+
+        pauseCtx->equipVtx[80].v.ob[0] = pauseCtx->equipVtx[82].v.ob[0] = linkX;
+        pauseCtx->equipVtx[81].v.ob[0] = pauseCtx->equipVtx[83].v.ob[0] = linkX + 64;
+        pauseCtx->equipVtx[80].v.ob[1] = pauseCtx->equipVtx[81].v.ob[1] = linkTop + pauseCtx->offsetY;
+        pauseCtx->equipVtx[82].v.ob[1] = pauseCtx->equipVtx[83].v.ob[1] = linkTop + pauseCtx->offsetY - 32;
     }
 
     pauseCtx->questVtx = Graph_Alloc(gfxCtx, 188 * sizeof(Vtx));
@@ -4963,7 +5026,7 @@ static void KaleidoScope_DrawFooterHints(PlayState* play) {
 // Fundo da pagina de itens: marrom com veios discretos e vinheta, e o lado direito (painel de detalhes) em preto
 // com uma transicao suave. Desenhado atras de tudo, depois do preenchimento escuro.
 // ---------------------------------------------------------------------------------------------------------------
-static void KaleidoScope_DrawItemPageBackground(PlayState* play, u8 alpha) {
+static void KaleidoScope_DrawItemPageBackground(PlayState* play, u8 alpha, bool withDetailPanel) {
     s32 l = OTRGetRectDimensionFromLeftEdge(0);
     s32 r = OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH);
     s32 panelX = ITEM_DETAIL_X - 14;
@@ -4987,12 +5050,14 @@ static void KaleidoScope_DrawItemPageBackground(PlayState* play, u8 alpha) {
         KaleidoScope_TabBarFill(play, l, SCREEN_HEIGHT - 3 - i * 3, r, SCREEN_HEIGHT - i * 3, 0, 0, 0, a);
     }
 
-    // Transicao para o painel preto da direita
-    for (i = 0; i < 6; i++) {
-        u8 a = (u8)(alpha * ((i + 1) * 36) / 255);
-        KaleidoScope_TabBarFill(play, panelX - 18 + i * 3, 0, panelX - 15 + i * 3, SCREEN_HEIGHT, 0, 0, 0, a);
+    // Transicao para o painel preto da direita (so na pagina de itens)
+    if (withDetailPanel) {
+        for (i = 0; i < 6; i++) {
+            u8 a = (u8)(alpha * ((i + 1) * 36) / 255);
+            KaleidoScope_TabBarFill(play, panelX - 18 + i * 3, 0, panelX - 15 + i * 3, SCREEN_HEIGHT, 0, 0, 0, a);
+        }
+        KaleidoScope_TabBarFill(play, panelX, 0, r, SCREEN_HEIGHT, 6, 6, 9, alpha);
     }
-    KaleidoScope_TabBarFill(play, panelX, 0, r, SCREEN_HEIGHT, 6, 6, 9, alpha);
     gDPPipeSync(POLY_OPA_DISP++);
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -5063,7 +5128,10 @@ void KaleidoScope_Draw(PlayState* play) {
 
             // Pagina de itens: fundo marrom e painel preto da direita
             if (pauseCtx->pageIndex == PAUSE_ITEM) {
-                KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha);
+                KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha, true);
+            } else if (KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+                // Pagina de equipamento: o mesmo fundo marrom, sem o painel da direita
+                KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha, false);
             }
         }
 
