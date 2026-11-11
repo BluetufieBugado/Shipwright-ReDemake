@@ -705,10 +705,14 @@ static void KaleidoScope_EquipDrawOvalFill(PlayState* play, s16 cx, s16 cy, s16 
     const s32 chunks = EQUIP_OVAL_SEGMENTS / EQUIP_OVAL_CHUNK;
     const f32 texW = (f32)(PAUSE_EQUIP_PLAYER_WIDTH << 5);
     const f32 texH = (f32)((4096 / (PAUSE_EQUIP_PLAYER_WIDTH * 2)) << 5);
-    // Recuo de ~1,5 texel do framebuffer em cada borda: com filtro bilinear, amostrar exatamente na borda le o texel
-    // seguinte, que "da a volta" e mostra o topo do Link (ex.: o pescoco) na base do oval.
-    const f32 insetU = 1.0f - 1.5f / (f32)PAUSE_EQUIP_PLAYER_WIDTH;
-    const f32 insetV = 1.0f - 1.5f / (f32)PAUSE_EQUIP_PLAYER_HEIGHT;
+    // Recuo da amostragem nas bordas do framebuffer. Com filtro bilinear, amostrar perto da borda le texels vizinhos
+    // que "dao a volta" e mostram o topo do Link (o pescoco) na base do oval. Um recuo de ~1,5 texel nao bastou
+    // (o vazamento tem varios texels), entao o padrao agora e 8 texels (~3% da altura). O recuo e uniforme em U e V
+    // (a proporcao do oval e ~3:4, a do framebuffer), entao o Link so aparece ~3% maior, sem distorcer.
+    // Ajustavel ao vivo pela CVar gEnhancements.EquipPose.OvalInset (em texels do framebuffer).
+    const f32 insetTexels = CLAMP(CVarGetFloat(CVAR_ENHANCEMENT("EquipPose.OvalInset"), 8.0f), 0.0f, 40.0f);
+    const f32 insetU = 1.0f - insetTexels / (f32)PAUSE_EQUIP_PLAYER_HEIGHT;
+    const f32 insetV = insetU;
     s32 chunk;
     s32 i;
 
