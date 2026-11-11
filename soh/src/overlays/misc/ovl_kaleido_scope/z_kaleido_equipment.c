@@ -380,6 +380,14 @@ s16 KaleidoScope_GetEquipSlotIconSize(s16 slot) {
     return icon;
 }
 
+// Retangulo do oval (centro, meia largura, meia altura) em unidades da pagina
+void KaleidoScope_GetEquipOvalRect(s16* cx, s16* cy, s16* hw, s16* hh) {
+    *cx = EQUIP_OVAL_CX;
+    *cy = EQUIP_OVAL_CY;
+    *hw = EQUIP_OVAL_HW;
+    *hh = EQUIP_OVAL_HH;
+}
+
 // Posicao do quadrilatero 80..83 (usado so no layout classico; no layout em abas o oval desenha o Link)
 void KaleidoScope_GetEquipLinkImagePos(s16* x, s16* top) {
     *x = -50;
@@ -697,6 +705,10 @@ static void KaleidoScope_EquipDrawOvalFill(PlayState* play, s16 cx, s16 cy, s16 
     const s32 chunks = EQUIP_OVAL_SEGMENTS / EQUIP_OVAL_CHUNK;
     const f32 texW = (f32)(PAUSE_EQUIP_PLAYER_WIDTH << 5);
     const f32 texH = (f32)((4096 / (PAUSE_EQUIP_PLAYER_WIDTH * 2)) << 5);
+    // Recuo de ~1,5 texel do framebuffer em cada borda: com filtro bilinear, amostrar exatamente na borda le o texel
+    // seguinte, que "da a volta" e mostra o topo do Link (ex.: o pescoco) na base do oval.
+    const f32 insetU = 1.0f - 1.5f / (f32)PAUSE_EQUIP_PLAYER_WIDTH;
+    const f32 insetV = 1.0f - 1.5f / (f32)PAUSE_EQUIP_PLAYER_HEIGHT;
     s32 chunk;
     s32 i;
 
@@ -724,8 +736,8 @@ static void KaleidoScope_EquipDrawOvalFill(PlayState* play, s16 cx, s16 cy, s16 
             v->v.ob[1] = (s16)(cy + hh * sa + (sa >= 0.0f ? 0.5f : -0.5f));
             v->v.ob[2] = 0;
             v->v.flag = 0;
-            v->v.tc[0] = (s16)(texW * (0.5f + 0.5f * ca));
-            v->v.tc[1] = (s16)(texH * (0.5f - 0.5f * sa));
+            v->v.tc[0] = (s16)(texW * (0.5f + 0.5f * ca * insetU));
+            v->v.tc[1] = (s16)(texH * (0.5f - 0.5f * sa * insetV));
             v->v.cn[0] = v->v.cn[1] = v->v.cn[2] = v->v.cn[3] = 255;
         }
 

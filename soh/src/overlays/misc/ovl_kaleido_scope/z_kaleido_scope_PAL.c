@@ -15,6 +15,7 @@
 #include "textures/map_48x85_static/map_48x85_static.h"
 #include "textures/parameter_static/parameter_static.h"
 #include "z_kaleido_tabfont.h"
+#include <math.h>
 #include "vt.h"
 
 #include <libultraship/bridge/resourcebridge.h>
@@ -1447,6 +1448,7 @@ extern bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx);
 extern void KaleidoScope_GetEquipSlotCenter(s16 slot, s16* x, s16* y);
 extern s16 KaleidoScope_GetEquipIconSize(void);
 extern s16 KaleidoScope_GetEquipSlotIconSize(s16 slot);
+extern void KaleidoScope_GetEquipOvalRect(s16* cx, s16* cy, s16* hw, s16* hh);
 extern void KaleidoScope_GetEquipLinkImagePos(s16* x, s16* top);
 extern s16 KaleidoScope_GetEquipArrowShiftInfo(bool right);
 
@@ -1472,6 +1474,12 @@ static s16 KaleidoScope_GetItemPageShiftInfoX(PauseContext* pauseCtx) {
 // (faixa azul com o nome) nao e mais desenhado.
 static bool KaleidoScope_IsTabbedItemPage(PauseContext* pauseCtx) {
     return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_ITEM;
+}
+
+// Faixa azul com o nome (e o "A to Equip" do rodape original): some nas abas Itens e Equipamento, que desenham o nome
+// por conta propria (painel de detalhes / dentro do oval).
+static bool KaleidoScope_HideNamePanel(PauseContext* pauseCtx) {
+    return KaleidoScope_IsTabbedItemPage(pauseCtx) || KaleidoScope_IsTabbedEquipPage(pauseCtx);
 }
 
 // Icones L/R das setas de pagina: escondidos nas abas Itens e (opcionalmente) Equipamento
@@ -2226,7 +2234,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, namePanelColor.r, namePanelColor.g, namePanelColor.b, namePanelColor.a);
     gSPVertex(POLY_OPA_DISP++, &pauseCtx->infoPanelVtx[0], 16, 0);
 
-    if (!KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+    if (!KaleidoScope_HideNamePanel(pauseCtx)) {
         gSPDisplayList(POLY_OPA_DISP++, gItemNamePanelDL);
     }
 
@@ -2288,7 +2296,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
         (pauseCtx->cursorSpecialPos == 0)) {
         if ((!pauseCtx->unk_1E4 || (pauseCtx->unk_1E4 == 2) || ((pauseCtx->unk_1E4 >= 4) && (pauseCtx->unk_1E4 <= 7)) ||
              (pauseCtx->unk_1E4 == 8)) &&
-            !KaleidoScope_IsTabbedItemPage(pauseCtx)) {
+            !KaleidoScope_HideNamePanel(pauseCtx)) {
             pauseCtx->infoPanelVtx[16].v.ob[0] = pauseCtx->infoPanelVtx[18].v.ob[0] = -63;
 
             pauseCtx->infoPanelVtx[17].v.ob[0] = pauseCtx->infoPanelVtx[19].v.ob[0] =
@@ -2514,7 +2522,7 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
                         KaleidoScope_QuadTextureIA8(POLY_OPA_DISP, sPlayMelodyTextures[gSaveContext.language],
                                                     D_8082ADE8[gSaveContext.language], 16, 4);
                 }
-            } else if (pauseCtx->pageIndex == PAUSE_EQUIP) {
+            } else if ((pauseCtx->pageIndex == PAUSE_EQUIP) && !KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
                 pauseCtx->infoPanelVtx[16].v.ob[0] = pauseCtx->infoPanelVtx[18].v.ob[0] = WREG(64 + languageOffset);
 
                 pauseCtx->infoPanelVtx[17].v.ob[0] = pauseCtx->infoPanelVtx[19].v.ob[0] =
@@ -4878,6 +4886,139 @@ static void KaleidoScope_DrawItemDetailPanel(PlayState* play) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Aba Equipamento, como no remake: o nome do equipamento aparece dentro do oval, na parte de baixo, sobre um degrade
+// escuro, com um divisor com losango e a descricao (quando existir em sTabItemTexts). Sem texto proprio, usa o nome
+// original do jogo (textura IA4 128x16 que o jogo ja carrega para o cursor). O oval vem de
+// KaleidoScope_GetEquipOvalRect (unidades da pagina; 1 unidade de pagina ~ 1,03 unidades de tela).
+// ---------------------------------------------------------------------------------------------------------------
+#define EQUIP_PAGE_TO_SCREEN 1.03f
+#define EQUIP_NAME_SC 118
+#define EQUIP_DESC_SC 90
+#define EQUIP_DESC_LINE_H 10
+
+// Meia largura da elipse (centro cxs/cys, semi-eixos hws/hhs) na altura y
+static s32 KaleidoScope_EquipOvalChord(f32 cys, f32 hws, f32 hhs, s32 y) {
+    f32 t = ((f32)y + 0.5f - cys) / hhs;
+
+    if (t >= 1.0f || t <= -1.0f) {
+        return 0;
+    }
+    return (s32)(hws * sqrtf(1.0f - t * t));
+}
+
+static void KaleidoScope_DrawEquipDetailPanel(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    s16 ocx, ocy, ohw, ohh;
+    f32 cxs, cys, hws, hhs;
+    u16 item = pauseCtx->cursorItem[PAUSE_EQUIP];
+    bool hasItem = (pauseCtx->cursorSpecialPos == 0) && (pauseCtx->namedItem != PAUSE_ITEM_NONE) &&
+                   (item != PAUSE_ITEM_NONE) && (item < 0xBF);
+    const TabItemText* text = NULL;
+    bool hasDesc;
+    s32 centerX;
+    s32 gradStart;
+    s32 gradEnd;
+    s32 y;
+    s32 nameY;
+    s32 dividerY;
+    s32 halfDiv;
+
+    KaleidoScope_GetEquipOvalRect(&ocx, &ocy, &ohw, &ohh);
+    cxs = 160.0f + ocx * EQUIP_PAGE_TO_SCREEN;
+    cys = 120.0f - ocy * EQUIP_PAGE_TO_SCREEN;
+    hws = ohw * EQUIP_PAGE_TO_SCREEN;
+    hhs = ohh * EQUIP_PAGE_TO_SCREEN;
+    centerX = (s32)cxs;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    // Degrade escuro na parte de baixo do oval (faixas de 1 unidade, do tamanho da corda da elipse naquela altura)
+    gradStart = (s32)(cys + hhs * 0.05f);
+    gradEnd = (s32)(cys + hhs) - 2;
+    KaleidoScope_SetupFillState(play);
+    for (y = gradStart; y < gradEnd; y++) {
+        s32 chord = KaleidoScope_EquipOvalChord(cys, hws, hhs, y) - 1;
+        f32 t = (f32)(y - gradStart) / (f32)(gradEnd - gradStart);
+        u8 a = (u8)(alpha * (t * t * 0.55f + t * 0.30f) * 0.92f);
+
+        if (chord > 0 && a > 0) {
+            KaleidoScope_TabBarFill(play, centerX - chord, y, centerX + chord, y + 1, 6, 5, 4, a);
+        }
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    if (hasItem) {
+        text = KaleidoScope_FindItemText(item);
+        hasDesc = (text != NULL) && (text->desc[0] != '\0');
+        nameY = hasDesc ? (s32)(cys + hhs * 0.22f) : (s32)(cys + hhs * 0.56f);
+
+        if (text != NULL) {
+            s32 nameSc = EQUIP_NAME_SC;
+            s32 availW = KaleidoScope_EquipOvalChord(cys, hws, hhs, nameY + 10) * 2 - 8;
+            s32 nameWq = KaleidoScope_FontWidthQ(text->name, -1, nameSc);
+            s32 lineH = (TABFONT_GH * EQUIP_NAME_SC / 100) / 4 + 1;
+
+            if (nameWq > availW * 4) { // nome comprido: reduz a escala para caber
+                nameSc = nameSc * (availW * 4) / nameWq;
+                if (nameSc < 70) {
+                    nameSc = 70;
+                }
+                nameWq = KaleidoScope_FontWidthQ(text->name, -1, nameSc);
+            }
+            KaleidoScope_FontDraw(play, text->name, -1, centerX * 4 - nameWq / 2, nameY, nameSc, 255, 244, 214, alpha);
+            dividerY = nameY + lineH + 2;
+        } else {
+            s32 nameW = KaleidoScope_EquipOvalChord(cys, hws, hhs, nameY + 8) * 2 - 10;
+            s32 nameH;
+            s32 nameX;
+
+            if (nameW > 128) {
+                nameW = 128;
+            }
+            nameH = nameW / 8;
+            nameX = centerX - nameW / 2;
+            gDPPipeSync(POLY_OPA_DISP++);
+            gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE,
+                              0, TEXEL0, 0, PRIMITIVE, 0);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 244, 214, alpha);
+            gDPLoadTextureBlock_4b(POLY_OPA_DISP++, pauseCtx->nameSegment, G_IM_FMT_IA, 128, 16, 0,
+                                   G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                                   G_TX_NOLOD, G_TX_NOLOD);
+            gSPWideTextureRectangle(POLY_OPA_DISP++, nameX << 2, nameY << 2, (nameX + nameW) << 2,
+                                    (nameY + nameH) << 2, G_TX_RENDERTILE, 0, 0, (1 << 10) * 128 / nameW,
+                                    (1 << 10) * 16 / nameH);
+            gDPPipeSync(POLY_OPA_DISP++);
+            dividerY = nameY + nameH + 3;
+        }
+
+        // Divisor com losango no centro
+        halfDiv = KaleidoScope_EquipOvalChord(cys, hws, hhs, dividerY) - 8;
+        if (halfDiv > 46) {
+            halfDiv = 46;
+        }
+        KaleidoScope_SetupFillState(play);
+        if (halfDiv > 8) {
+            KaleidoScope_TabBarFill(play, centerX - halfDiv, dividerY, centerX - 6, dividerY + 1, 150, 118, 66, alpha);
+            KaleidoScope_TabBarFill(play, centerX + 7, dividerY, centerX + halfDiv + 1, dividerY + 1, 150, 118, 66,
+                                    alpha);
+        }
+        KaleidoScope_DrawDiamond(play, centerX, dividerY, 2, 190, 150, 84, alpha);
+        gDPPipeSync(POLY_OPA_DISP++);
+
+        if (hasDesc) {
+            s32 descY = dividerY + 5;
+            s32 wrapW = KaleidoScope_EquipOvalChord(cys, hws, hhs, descY + 2 * EQUIP_DESC_LINE_H) * 2 - 6;
+
+            KaleidoScope_FontDrawWrapped(play, text->desc, centerX * 4, descY, EQUIP_DESC_LINE_H, wrapW * 4,
+                                         EQUIP_DESC_SC, 222, 212, 186, alpha);
+        }
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Rupias no topo direito da barra de abas, como no remake: icone, quantidade grande e "/maximo" menor.
 // Mantenha TAB_RUPEE_MIN_ROOM igual a TABBED_PAUSE_RUPEE_MIN_ROOM do z_parameter.c (la o contador original e
 // escondido apenas quando este aqui tem espaco para aparecer).
@@ -5184,6 +5325,12 @@ void KaleidoScope_Draw(PlayState* play) {
         // Painel de detalhes do item (pagina de itens com o menu aberto)
         if (tabbedMenu && pauseCtx->state == 6 && pauseCtx->pageIndex == PAUSE_ITEM) {
             KaleidoScope_DrawItemDetailPanel(play);
+        }
+
+        // Nome do equipamento dentro do oval (pagina de equipamento com o menu aberto)
+        if (tabbedMenu && pauseCtx->state == 6 && pauseCtx->pageIndex == PAUSE_EQUIP &&
+            KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
+            KaleidoScope_DrawEquipDetailPanel(play);
         }
     }
 
