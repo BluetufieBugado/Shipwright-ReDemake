@@ -43,6 +43,7 @@
 #include "soh/Enhancements/timesplits/TimeSplitsSettings.h"
 #include "soh/Enhancements/randomizer/Plandomizer.h"
 #include "soh/SohGui/SohModals.h"
+#include "soh/Enhancements/OcarinaSongMenu/OcarinaSongMenu.h"
 
 namespace SohGui {
 
@@ -111,6 +112,7 @@ std::shared_ptr<SohModalWindow> mModalWindow;
 std::shared_ptr<Notification::Window> mNotificationWindow;
 std::shared_ptr<TimeDisplayWindow> mTimeDisplayWindow;
 std::shared_ptr<AnchorRoomWindow> mAnchorRoomWindow;
+std::shared_ptr<OcarinaSongMenuWindow> mOcarinaSongMenuWindow;
 
 UIWidgets::Colors GetMenuThemeColor() {
     return mSohMenu->GetMenuThemeColor();
@@ -153,6 +155,7 @@ std::vector<std::shared_ptr<Ship::GuiWindow>> GetAllGuiWindows() {
         mNotificationWindow,
         mTimeDisplayWindow,
         mAnchorRoomWindow,
+        mOcarinaSongMenuWindow,
         // Registered outside SohGui.
         gui->GetGuiWindow("Configure Controller"),
         gui->GetGuiWindow("Console"),
@@ -270,6 +273,10 @@ void SetupGuiElements() {
     gui->AddGuiWindow(mTimeDisplayWindow);
     mAnchorRoomWindow = std::make_shared<AnchorRoomWindow>(CVAR_WINDOW("AnchorRoom"), "Anchor Room");
     gui->AddGuiWindow(mAnchorRoomWindow);
+    mOcarinaSongMenuWindow =
+        std::make_shared<OcarinaSongMenuWindow>(CVAR_WINDOW("OcarinaSongMenu"), "Ocarina Song Menu");
+    gui->AddGuiWindow(mOcarinaSongMenuWindow);
+    mOcarinaSongMenuWindow->Show();
 }
 
 void Destroy() {
@@ -307,6 +314,7 @@ void Destroy() {
     mPlandomizerWindow = nullptr;
     mTimeDisplayWindow = nullptr;
     mAnchorRoomWindow = nullptr;
+    mOcarinaSongMenuWindow = nullptr;
 }
 
 void RegisterPopup(std::string title, std::string message, std::string button1, std::string button2,
