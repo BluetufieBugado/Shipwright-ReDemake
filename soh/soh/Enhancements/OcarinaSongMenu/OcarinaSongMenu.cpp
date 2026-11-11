@@ -6,10 +6,10 @@
 #include "soh/OTRGlobals.h"
 
 extern "C" {
+#include "z64.h"
 #include "macros.h"
 #include "variables.h"
 #include "functions.h"
-#include "z64.h"
 extern OcarinaNote sOcarinaSongNotes[OCARINA_SONG_MAX][20];
 extern PlayState* gPlayState;
 }
@@ -237,7 +237,7 @@ void OcarinaSongMenuWindow::DrawElement() {
         std::vector<BtnNote> notes = GetSongButtons(s.songId);
         float step = fminf(46.0f, (right - left - 90.0f) / fmaxf(1.0f, (float)notes.size()));
         for (size_t i = 0; i < notes.size(); i++) {
-            float x = left + 70.0f + i * step;
+            float x = left + 70.0f + (float)i * step;
             // A (mais grave) na linha de baixo, C-Cima (mais agudo) na linha de cima
             float y = top + gap * (4.0f - (float)notes[i]);
             DrawNoteBlock(dl, ImVec2(x, y), notes[i]);
