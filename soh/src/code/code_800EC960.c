@@ -1980,6 +1980,20 @@ void AudioOcarina_EnableInput(u8 inputEnabled) {
 }
 
 /**
+ * Ocarina song menu: true while the ocarina is in use (free play, song teaching, etc).
+ */
+u8 AudioOcarina_IsActive(void) {
+    return sOcarinaFlags != 0;
+}
+
+/**
+ * Ocarina song menu: lets the menu save and restore the input state while it is open.
+ */
+u8 AudioOcarina_IsInputEnabled(void) {
+    return sIsOcarinaInputEnabled;
+}
+
+/**
  * Resets ocarina properties based on the ocarina instrument id
  * If ocarina instrument id is "OCARINA_INSTRUMENT_OFF", turn off the ocarina
  * For all ocarina instrument ids, turn the ocarina on with the instrument id

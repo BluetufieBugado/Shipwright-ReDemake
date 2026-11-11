@@ -1,17 +1,15 @@
 #pragma once
 
-#include <libultraship/libultraship.h>
+#include <ship/window/gui/GuiWindow.h>
 
-// Overlay inspirado no menu de músicas do remake de Ocarina of Time:
-// botão fixo embaixo da tela, arco de bolinhas com as músicas e pergaminho com a partitura.
+// Menu de músicas da Ocarina, aberto/fechado com D-Pad para baixo enquanto a Ocarina está em uso.
+// Sobrescreve Draw() para NÃO desenhar a moldura padrão de janela (mesmo padrão do InputViewer).
 class OcarinaSongMenuWindow final : public Ship::GuiWindow {
   public:
-    using Ship::GuiWindow::GuiWindow;
-    ~OcarinaSongMenuWindow() override = default;
+    using GuiWindow::GuiWindow;
 
-  protected:
-    void InitElement() override;
+    void Draw() override;
+    void InitElement() override{};
     void DrawElement() override;
-    void UpdateElement() override {
-    }
+    void UpdateElement() override{};
 };
