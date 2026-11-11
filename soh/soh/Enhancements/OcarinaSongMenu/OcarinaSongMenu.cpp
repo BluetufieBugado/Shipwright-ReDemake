@@ -10,7 +10,6 @@ extern "C" {
 #include "macros.h"
 #include "variables.h"
 #include "functions.h"
-extern OcarinaNote sOcarinaSongNotes[OCARINA_SONG_MAX][20];
 extern PlayState* gPlayState;
 }
 
@@ -58,41 +57,37 @@ constexpr int kSongCount = (int)(sizeof(kSongs) / sizeof(kSongs[0]));
 
 enum BtnNote { BN_A = 0, BN_DOWN, BN_RIGHT, BN_LEFT, BN_UP, BN_NONE };
 
-// Converte pitch do jogo para botão (mesmo mapeamento do sButtonToPitchMap)
-BtnNote PitchToButton(u8 pitch) {
-    switch (pitch) {
-        case OCARINA_PITCH_D4:
-            return BN_A;
-        case OCARINA_PITCH_F4:
-            return BN_DOWN;
-        case OCARINA_PITCH_A4:
-            return BN_RIGHT;
-        case OCARINA_PITCH_B4:
-            return BN_LEFT;
-        case OCARINA_PITCH_D5:
-            return BN_UP;
-        default:
-            return BN_NONE;
-    }
-}
-
-// Lê as notas direto da tabela do jogo (ignora silêncios e notas repetidas de duração)
+// Sequencia de botoes de cada musica (A, Baixo, Direita, Esquerda, Cima).
+// Fixa no codigo para nao depender de simbolos internos do jogo.
 std::vector<BtnNote> GetSongButtons(int songId) {
-    std::vector<BtnNote> out;
-    for (int i = 0; i < 20; i++) {
-        u8 pitch = sOcarinaSongNotes[songId][i].pitch;
-        if (pitch == OCARINA_PITCH_NONE) {
-            if (sOcarinaSongNotes[songId][i].length == 0) {
-                break; // fim da música
-            }
-            continue;
-        }
-        BtnNote b = PitchToButton(pitch);
-        if (b != BN_NONE) {
-            out.push_back(b);
-        }
+    switch (songId) {
+        case OCARINA_SONG_LULLABY:
+            return { BN_LEFT, BN_UP, BN_RIGHT, BN_LEFT, BN_UP, BN_RIGHT };
+        case OCARINA_SONG_EPONAS:
+            return { BN_UP, BN_LEFT, BN_RIGHT, BN_UP, BN_LEFT, BN_RIGHT };
+        case OCARINA_SONG_SARIAS:
+            return { BN_DOWN, BN_RIGHT, BN_LEFT, BN_DOWN, BN_RIGHT, BN_LEFT };
+        case OCARINA_SONG_SUNS:
+            return { BN_RIGHT, BN_DOWN, BN_UP, BN_RIGHT, BN_DOWN, BN_UP };
+        case OCARINA_SONG_TIME:
+            return { BN_RIGHT, BN_A, BN_DOWN, BN_RIGHT, BN_A, BN_DOWN };
+        case OCARINA_SONG_STORMS:
+            return { BN_A, BN_DOWN, BN_UP, BN_A, BN_DOWN, BN_UP };
+        case OCARINA_SONG_MINUET:
+            return { BN_A, BN_UP, BN_LEFT, BN_RIGHT, BN_LEFT, BN_RIGHT };
+        case OCARINA_SONG_BOLERO:
+            return { BN_DOWN, BN_A, BN_DOWN, BN_A, BN_RIGHT, BN_DOWN, BN_RIGHT, BN_DOWN };
+        case OCARINA_SONG_SERENADE:
+            return { BN_A, BN_DOWN, BN_RIGHT, BN_RIGHT, BN_LEFT };
+        case OCARINA_SONG_REQUIEM:
+            return { BN_A, BN_DOWN, BN_A, BN_RIGHT, BN_DOWN, BN_A };
+        case OCARINA_SONG_NOCTURNE:
+            return { BN_LEFT, BN_RIGHT, BN_RIGHT, BN_A, BN_LEFT, BN_RIGHT, BN_DOWN };
+        case OCARINA_SONG_PRELUDE:
+            return { BN_UP, BN_RIGHT, BN_UP, BN_RIGHT, BN_LEFT, BN_UP };
+        default:
+            return {};
     }
-    return out;
 }
 
 bool sOpen = false;
