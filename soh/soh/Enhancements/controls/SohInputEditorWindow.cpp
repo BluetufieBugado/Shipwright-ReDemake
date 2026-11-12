@@ -9,6 +9,7 @@
 #include "soh/SohGui/SohGui.hpp"
 #include "soh/cvar_prefixes.h"
 #include "soh/SohGui/UIWidgets.hpp"
+#include "soh/Enhancements/MicOcarina/MicOcarina.h"
 
 extern "C" {
 #include "z64.h"
@@ -1349,6 +1350,23 @@ void SohInputEditorWindow::DrawOcarinaControlPanel() {
     SohGui::mSohMenu->MenuDrawItem(dpadOcarina, THEME_COLOR);
     SohGui::mSohMenu->MenuDrawItem(rightStickOcarina, THEME_COLOR);
     SohGui::mSohMenu->MenuDrawItem(micOcarina, THEME_COLOR);
+    if (CVarGetInteger(CVAR_SETTING("CustomOcarina.Microphone"), 0)) {
+        CVarSliderInt("Mic Sensitivity: %d", CVAR_SETTING("CustomOcarina.MicSensitivity"),
+                      IntSliderOptions().Color(THEME_COLOR).Min(0).Max(100).DefaultValue(45).ShowButtons(true));
+        CVarSliderInt("Mic Octave Shift: %d", CVAR_SETTING("CustomOcarina.MicOctave"),
+                      IntSliderOptions().Color(THEME_COLOR).Min(-3).Max(3).DefaultValue(0).ShowButtons(true));
+        CVarSliderInt("Mic Tuning (cents): %d", CVAR_SETTING("CustomOcarina.MicTuning"),
+                      IntSliderOptions().Color(THEME_COLOR).Min(-50).Max(50).DefaultValue(0).ShowButtons(true));
+
+        // Live preview so the user can calibrate without opening the ocarina in-game
+        MicOcarina_Poll(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicOctave"), 0),
+                        CVarGetInteger(CVAR_SETTING("CustomOcarina.MicSensitivity"), 45),
+                        CVarGetInteger(CVAR_SETTING("CustomOcarina.MicTuning"), 0));
+        static const char* micNoteNames[] = { "A (D4)", "C-Down (F4)", "C-Right (A4)", "C-Left (B4)", "C-Up (D5)" };
+        int micNote = MicOcarina_GetNote();
+        ImGui::Text("Mic: %.0f Hz  ->  %s", MicOcarina_GetDebugHz(),
+                    (micNote >= 0 && micNote <= 4) ? micNoteNames[micNote] : "-");
+    }
     CVarCheckbox("Customize Ocarina Controls", CVAR_SETTING("CustomOcarina.Enabled"), checkOpt);
 
     if (!CVarGetInteger(CVAR_SETTING("CustomOcarina.Enabled"), 0)) {
@@ -1941,7 +1959,8 @@ void RegisterInputEditorWidgets() {
         .Options(CheckboxOptions()
                      .Color(THEME_COLOR)
                      .Tooltip("Play ocarina notes by humming, singing or playing a real instrument into your "
-                              "microphone. Recognized notes: D, F, A, B and high D."));
+                              "microphone. Recognized notes: D, F, A, B and high D. Use the sliders below to "
+                              "calibrate octave, sensitivity and tuning."));
     SohGui::mSohMenu->AddSearchWidget({ micOcarina, "Settings", "Controls", "Ocarina Controls" });
 
     dpadPause = { .name = "D-pad Support on Pause Screen", .type = WidgetType::WIDGET_CVAR_CHECKBOX };

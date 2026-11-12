@@ -6,8 +6,8 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
-#include "soh/Enhancements/MicOcarina/MicOcarina.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/MicOcarina/MicOcarina.h"
 
 // TODO: can these macros be shared between files? code_800F9280 seems to use
 // versions without any casts...
@@ -1912,7 +1912,9 @@ void AudioOcarina_PlayControllerInput(u8 unused) {
 
         // SoH: Microphone ocarina (hum/sing/play a real instrument)
         if (CVarGetInteger(CVAR_SETTING("CustomOcarina.Microphone"), 0)) {
-            MicOcarina_Poll();
+            MicOcarina_Poll(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicOctave"), 0),
+                            CVarGetInteger(CVAR_SETTING("CustomOcarina.MicSensitivity"), 45),
+                            CVarGetInteger(CVAR_SETTING("CustomOcarina.MicTuning"), 0));
             if (sCurOcarinaPitch == OCARINA_PITCH_NONE) {
                 switch (MicOcarina_GetNote()) {
                     case 0:

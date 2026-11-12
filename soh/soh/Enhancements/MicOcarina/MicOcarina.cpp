@@ -21,7 +21,7 @@ namespace {
 constexpr int kSampleRate = 44100;
 constexpr int kWindow = 2048;  // amostras por análise
 constexpr int kMaxTau = 1024;  // ~43 Hz
-constexpr int kMinTau = 40;    // ~1100 Hz
+constexpr int kMinTau = 20;    // ~2200 Hz (cobre flauta doce aguda)
 constexpr float kYinThresh = 0.15f;
 constexpr int kHopMs = 12;
 constexpr int kNeedStable = 5;      // ~60 ms para aceitar uma nota
@@ -39,9 +39,11 @@ std::mutex gMutex;
 std::vector<float> gRing(kWindow * 4, 0.0f);
 size_t gWrite = 0;
 
-// Ajustes (futuramente ligue a CVars/sliders)
-float gRmsThreshold = 0.015f; // sensibilidade
-float gTuningCents = 0.0f;    // desafinação do instrumento
+// Ajustes (atualizados pela thread do jogo em MicOcarina_Poll)
+std::atomic<float> gRmsThreshold{ 0.0126f };
+std::atomic<float> gTuningCents{ 0.0f };
+std::atomic<int> gOctaveShift{ 0 };
+std::atomic<float> gDebugHz{ 0.0f };
 
 void SDLCALL CaptureCb(void*, Uint8* stream, int len) {
     const float* in = reinterpret_cast<const float*>(stream);
@@ -82,7 +84,17 @@ float DetectPitch(const std::vector<float>& x, float sr) {
         }
     }
     if (best < 1) {
-        return 0.0f;
+        // Fallback: sem mergulho abaixo do limiar, usa o melhor mínimo se razoável
+        float minVal = 1.0f;
+        for (int tau = kMinTau; tau < kMaxTau - 1; tau++) {
+            if (cm[tau] < minVal) {
+                minVal = cm[tau];
+                best = tau;
+            }
+        }
+        if (best < 1 || minVal > 0.25f) {
+            return 0.0f;
+        }
     }
     float s0 = cm[best - 1], s1 = cm[best], s2 = cm[best + 1];
     float denom = s0 + s2 - 2.0f * s1;
@@ -91,32 +103,46 @@ float DetectPitch(const std::vector<float>& x, float sr) {
 }
 
 // Frequência -> índice da nota (0=D4, 1=F4, 2=A4, 3=B4, 4=D5), ou -1.
-int FreqToNote(float hz) {
+// 'held' é a nota atualmente sustentada (histerese: tolera mais desvio enquanto segura).
+int FreqToNote(float hz, int held) {
     if (hz <= 0.0f) {
         return -1;
     }
-    float midi = 69.0f + 12.0f * std::log2(hz / 440.0f) - gTuningCents / 100.0f;
+    float midi = 69.0f + 12.0f * std::log2(hz / 440.0f) - gTuningCents.load() / 100.0f +
+                 12.0f * static_cast<float>(gOctaveShift.load());
     static const int pcs[4] = { 2, 5, 9, 11 }; // D, F, A, B
-    static const int idx[4] = { 0, 1, 2, 3 };
 
     float pc = std::fmod(midi, 12.0f);
     if (pc < 0.0f) {
         pc += 12.0f;
     }
-    float bestDist = 1e9f;
-    int bestIdx = -1;
-    for (int i = 0; i < 4; i++) {
+    auto pcDist = [&](int i) {
         float dist = std::fabs(pc - static_cast<float>(pcs[i]));
-        dist = std::min(dist, 12.0f - dist);
+        return std::min(dist, 12.0f - dist);
+    };
+
+    int bestIdx = -1;
+    float bestDist = 1e9f;
+    for (int i = 0; i < 4; i++) {
+        float dist = pcDist(i);
         if (dist < bestDist) {
             bestDist = dist;
-            bestIdx = idx[i];
+            bestIdx = i;
+        }
+    }
+
+    // Histerese: se já está segurando uma nota e o som continua perto dela, mantém.
+    if (held >= 0) {
+        int heldPc = held == 4 ? 0 : held; // D5 usa a mesma classe de altura do D4
+        if (pcDist(heldPc) <= 1.0f) {
+            bestIdx = heldPc;
+            bestDist = 0.0f;
         }
     }
     if (bestDist > 0.7f) { // fora de ~70 cents de qualquer nota válida
         return -1;
     }
-    if (bestIdx == 0 && midi >= 72.0f) { // D agudo -> D5
+    if (bestIdx == 0 && midi >= 72.0f) { // D agudo -> D5 (C-cima)
         return 4;
     }
     return bestIdx;
@@ -147,9 +173,12 @@ void Worker() {
         rms = std::sqrt(rms / kWindow);
 
         int now = -1;
-        if (rms > gRmsThreshold) {
-            now = FreqToNote(DetectPitch(window, static_cast<float>(kSampleRate)));
+        float hz = 0.0f;
+        if (rms > gRmsThreshold.load()) {
+            hz = DetectPitch(window, static_cast<float>(kSampleRate));
+            now = FreqToNote(hz, stable);
         }
+        gDebugHz.store(hz);
 
         if (now < 0) {
             if (++silenceCount >= kNeedSilence) {
@@ -207,7 +236,12 @@ void StartInternal() {
 }
 } // namespace
 
-extern "C" void MicOcarina_Poll(void) {
+extern "C" void MicOcarina_Poll(int octaveShift, int sensitivity, int tuningCents) {
+    sensitivity = std::min(100, std::max(0, sensitivity));
+    // 0 -> 0.1 (pouco sensível) ... 100 -> 0.001 (muito sensível)
+    gRmsThreshold.store(0.1f * std::pow(0.01f, static_cast<float>(sensitivity) / 100.0f));
+    gTuningCents.store(static_cast<float>(std::min(50, std::max(-50, tuningCents))));
+    gOctaveShift.store(std::min(3, std::max(-3, octaveShift)));
     gLastPoll.store(SDL_GetTicks());
     if (!gRun) {
         StartInternal();
@@ -216,6 +250,10 @@ extern "C" void MicOcarina_Poll(void) {
 
 extern "C" int MicOcarina_GetNote(void) {
     return gNote.load();
+}
+
+extern "C" float MicOcarina_GetDebugHz(void) {
+    return gDebugHz.load();
 }
 
 extern "C" void MicOcarina_Stop(void) {
@@ -229,4 +267,5 @@ extern "C" void MicOcarina_Stop(void) {
         gDev = 0;
     }
     gNote.store(-1);
+    gDebugHz.store(0.0f);
 }
