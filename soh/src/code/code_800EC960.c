@@ -6,6 +6,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/Enhancements/MicOcarina/MicOcarina.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 
 // TODO: can these macros be shared between files? code_800F9280 seems to use
@@ -1907,6 +1908,47 @@ void AudioOcarina_PlayControllerInput(u8 unused) {
             osSyncPrintf("Presss NA_KEY_D5 %08x\n", sOcarinaD5BtnMap);
             sCurOcarinaPitch = OCARINA_PITCH_D5;
             sCurOcarinaButtonIndex = OCARINA_BTN_C_UP;
+        }
+
+        // SoH: Microphone ocarina (hum/sing/play a real instrument)
+        if (CVarGetInteger(CVAR_SETTING("CustomOcarina.Microphone"), 0)) {
+            MicOcarina_Poll();
+            if (sCurOcarinaPitch == OCARINA_PITCH_NONE) {
+                switch (MicOcarina_GetNote()) {
+                    case 0:
+                        if (GameInteractor_Should(VB_HAVE_OCARINA_NOTE_D4, true)) {
+                            sCurOcarinaPitch = OCARINA_PITCH_D4;
+                            sCurOcarinaButtonIndex = OCARINA_BTN_A;
+                        }
+                        break;
+                    case 1:
+                        if (GameInteractor_Should(VB_HAVE_OCARINA_NOTE_F4, true)) {
+                            sCurOcarinaPitch = OCARINA_PITCH_F4;
+                            sCurOcarinaButtonIndex = OCARINA_BTN_C_DOWN;
+                        }
+                        break;
+                    case 2:
+                        if (GameInteractor_Should(VB_HAVE_OCARINA_NOTE_A4, true)) {
+                            sCurOcarinaPitch = OCARINA_PITCH_A4;
+                            sCurOcarinaButtonIndex = OCARINA_BTN_C_RIGHT;
+                        }
+                        break;
+                    case 3:
+                        if (GameInteractor_Should(VB_HAVE_OCARINA_NOTE_B4, true)) {
+                            sCurOcarinaPitch = OCARINA_PITCH_B4;
+                            sCurOcarinaButtonIndex = OCARINA_BTN_C_LEFT;
+                        }
+                        break;
+                    case 4:
+                        if (GameInteractor_Should(VB_HAVE_OCARINA_NOTE_D5, true)) {
+                            sCurOcarinaPitch = OCARINA_PITCH_D5;
+                            sCurOcarinaButtonIndex = OCARINA_BTN_C_UP;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
 
         // SoH

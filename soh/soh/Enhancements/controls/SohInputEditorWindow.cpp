@@ -28,6 +28,7 @@ static WidgetInfo mouseAutoCapture;
 static WidgetInfo mouseDisableThirdPerson;
 static WidgetInfo rightStickOcarina;
 static WidgetInfo dpadOcarina;
+static WidgetInfo micOcarina;
 static WidgetInfo dpadPause;
 static WidgetInfo dpadText;
 
@@ -1347,6 +1348,7 @@ void SohInputEditorWindow::DrawOcarinaControlPanel() {
     CheckboxOptions checkOpt = CheckboxOptions().Color(THEME_COLOR);
     SohGui::mSohMenu->MenuDrawItem(dpadOcarina, THEME_COLOR);
     SohGui::mSohMenu->MenuDrawItem(rightStickOcarina, THEME_COLOR);
+    SohGui::mSohMenu->MenuDrawItem(micOcarina, THEME_COLOR);
     CVarCheckbox("Customize Ocarina Controls", CVAR_SETTING("CustomOcarina.Enabled"), checkOpt);
 
     if (!CVarGetInteger(CVAR_SETTING("CustomOcarina.Enabled"), 0)) {
@@ -1933,6 +1935,14 @@ void RegisterInputEditorWidgets() {
     rightStickOcarina = { .name = "Right Stick Ocarina Playback", .type = WidgetType::WIDGET_CVAR_CHECKBOX };
     rightStickOcarina.CVar(CVAR_SETTING("CustomOcarina.RightStick")).Options(CheckboxOptions().Color(THEME_COLOR));
     SohGui::mSohMenu->AddSearchWidget({ rightStickOcarina, "Settings", "Controls", "Ocarina Controls" });
+
+    micOcarina = { .name = "Microphone Ocarina Playback", .type = WidgetType::WIDGET_CVAR_CHECKBOX };
+    micOcarina.CVar(CVAR_SETTING("CustomOcarina.Microphone"))
+        .Options(CheckboxOptions()
+                     .Color(THEME_COLOR)
+                     .Tooltip("Play ocarina notes by humming, singing or playing a real instrument into your "
+                              "microphone. Recognized notes: D, F, A, B and high D."));
+    SohGui::mSohMenu->AddSearchWidget({ micOcarina, "Settings", "Controls", "Ocarina Controls" });
 
     dpadPause = { .name = "D-pad Support on Pause Screen", .type = WidgetType::WIDGET_CVAR_CHECKBOX };
     dpadPause.CVar(CVAR_SETTING("DPadOnPause"))
