@@ -2,8 +2,10 @@
 #include "libultraship/libultra/controller.h"
 #include <ship/Context.h>
 #include <libultraship/controller/controldeck/ControlDeck.h>
+#include <fast/Fast3dGui.h>
 #include <imgui.h>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 #include "OcarinaSongMenu.h"
@@ -23,6 +25,9 @@ u8 AudioOcarina_IsActive(void);
 u8 AudioOcarina_IsInputEnabled(void);
 }
 
+// TEMPORÁRIO: mostra uma linha de diagnóstico no canto da tela. Mude para 0 depois de resolver.
+#define OSM_DEBUG 0
+
 namespace {
 
 #define CVAR_OCA_MENU_NAME CVAR_ENHANCEMENT("OcarinaSongMenu")
@@ -33,40 +38,43 @@ constexpr int kBtnPrev = BTN_DLEFT;
 constexpr int kBtnNext = BTN_DRIGHT;
 constexpr int kBtnListen = BTN_Z; // ouvir a melodia
 
+constexpr float kPi = 3.14159265f;
+
+// Cor do disco escuro de cada bolinha (também usada para "recortar" formas, como a lua)
+const ImU32 kDiscColor = IM_COL32(25, 25, 30, 235);
+
 struct SongInfo {
     const char* name;
     const char* desc;
-    int songId;        // OCARINA_SONG_*
-    int questItem;     // QUEST_SONG_*
-    ImU32 color;       // cor da bolinha (placeholder até existirem ícones PNG)
-    const char* glyph; // sigla curta dentro da bolinha (placeholder)
+    int songId;    // OCARINA_SONG_*
+    int questItem; // QUEST_SONG_*
+    ImU32 color;   // cor principal do ícone
 };
 
 const SongInfo kSongs[] = {
     { "Zelda's Lullaby", "A gentle melody for the royal family.", OCARINA_SONG_LULLABY, QUEST_SONG_LULLABY,
-      IM_COL32(230, 200, 90, 255), "Z" },
+      IM_COL32(230, 200, 90, 255) },
     { "Epona's Song", "A melody that calls your horse.", OCARINA_SONG_EPONAS, QUEST_SONG_EPONA,
-      IM_COL32(200, 130, 80, 255), "E" },
+      IM_COL32(210, 140, 80, 255) },
     { "Saria's Song", "A cheerful tune from a friend in the forest.", OCARINA_SONG_SARIAS, QUEST_SONG_SARIA,
-      IM_COL32(90, 190, 90, 255), "S" },
+      IM_COL32(90, 200, 100, 255) },
     { "Sun's Song", "Turns day to night, and night to day.", OCARINA_SONG_SUNS, QUEST_SONG_SUN,
-      IM_COL32(240, 190, 60, 255), "So" },
-    { "Song of Time", "Opens the Door of Time.", OCARINA_SONG_TIME, QUEST_SONG_TIME, IM_COL32(110, 150, 230, 255),
-      "T" },
+      IM_COL32(250, 200, 60, 255) },
+    { "Song of Time", "Opens the Door of Time.", OCARINA_SONG_TIME, QUEST_SONG_TIME, IM_COL32(120, 160, 240, 255) },
     { "Song of Storms", "Calls forth rain and storms.", OCARINA_SONG_STORMS, QUEST_SONG_STORMS,
-      IM_COL32(150, 150, 200, 255), "St" },
+      IM_COL32(170, 175, 215, 255) },
     { "Minuet of Forest", "This melody will take you to the Sacred Forest Meadow.", OCARINA_SONG_MINUET,
-      QUEST_SONG_MINUET, IM_COL32(60, 170, 80, 255), "Mi" },
+      QUEST_SONG_MINUET, IM_COL32(70, 190, 90, 255) },
     { "Bolero of Fire", "This melody will take you to Death Mountain Crater.", OCARINA_SONG_BOLERO, QUEST_SONG_BOLERO,
-      IM_COL32(220, 70, 50, 255), "Bo" },
+      IM_COL32(240, 80, 50, 255) },
     { "Serenade of Water", "This whimsical melody will take you to Lake Hylia.", OCARINA_SONG_SERENADE,
-      QUEST_SONG_SERENADE, IM_COL32(70, 110, 230, 255), "Se" },
+      QUEST_SONG_SERENADE, IM_COL32(80, 130, 240, 255) },
     { "Requiem of Spirit", "This melody will take you to the Desert Colossus.", OCARINA_SONG_REQUIEM,
-      QUEST_SONG_REQUIEM, IM_COL32(230, 150, 60, 255), "Re" },
+      QUEST_SONG_REQUIEM, IM_COL32(235, 160, 70, 255) },
     { "Nocturne of Shadow", "This melody will take you to the Graveyard.", OCARINA_SONG_NOCTURNE, QUEST_SONG_NOCTURNE,
-      IM_COL32(150, 60, 170, 255), "No" },
+      IM_COL32(170, 80, 190, 255) },
     { "Prelude of Light", "This melody will take you to the Temple of Time.", OCARINA_SONG_PRELUDE, QUEST_SONG_PRELUDE,
-      IM_COL32(240, 230, 130, 255), "Pr" },
+      IM_COL32(245, 235, 140, 255) },
 };
 constexpr int kSongCount = (int)(sizeof(kSongs) / sizeof(kSongs[0]));
 
@@ -150,14 +158,214 @@ void PlaySelectedMelody() {
     sMelodyStarted = true;
 }
 
+// ---------------------------------------------------------------------------
+// Ícones desenhados por código
+// ---------------------------------------------------------------------------
+
+// Forma de "lente" (folha, olho). Convexa. angle em radianos.
+void DrawLens(ImDrawList* dl, ImVec2 c, float halfLen, float halfWid, float angle, ImU32 col) {
+    const int n = 10;
+    ImVec2 pts[2 * n];
+    int count = 0;
+    const float ca = cosf(angle), sa = sinf(angle);
+    for (int i = 0; i < n; i++) {
+        float t = (float)i / (float)(n - 1);
+        float u = (t - 0.5f) * 2.0f * halfLen;
+        float v = -sinf(kPi * t) * halfWid;
+        pts[count++] = ImVec2(c.x + u * ca - v * sa, c.y + u * sa + v * ca);
+    }
+    for (int i = n - 2; i >= 1; i--) {
+        float t = (float)i / (float)(n - 1);
+        float u = (t - 0.5f) * 2.0f * halfLen;
+        float v = sinf(kPi * t) * halfWid;
+        pts[count++] = ImVec2(c.x + u * ca - v * sa, c.y + u * sa + v * ca);
+    }
+    dl->AddConvexPolyFilled(pts, count, col);
+}
+
+// Lua crescente: círculo menos um círculo deslocado (recorte na cor do disco)
+void DrawCrescent(ImDrawList* dl, ImVec2 c, float rad, ImU32 col) {
+    dl->AddCircleFilled(c, rad, col, 32);
+    dl->AddCircleFilled(ImVec2(c.x + rad * 0.45f, c.y - rad * 0.3f), rad * 0.85f, kDiscColor, 32);
+}
+
+// Desenha o ícone da música "idx" centrado em c, cabendo em um círculo de raio rad
+void DrawSongIcon(ImDrawList* dl, ImVec2 c, float rad, int idx, ImU32 col) {
+    const float R = rad;
+    switch (idx) {
+        case 0: { // Zelda's Lullaby: Triforce
+            const float s = R * 0.95f;
+            ImVec2 apex(c.x, c.y - s * 0.9f);
+            ImVec2 bl(c.x - s, c.y + s * 0.8f);
+            ImVec2 br(c.x + s, c.y + s * 0.8f);
+            ImVec2 bm(c.x, c.y + s * 0.8f);
+            ImVec2 ml(c.x - s * 0.5f, c.y - s * 0.05f);
+            ImVec2 mr(c.x + s * 0.5f, c.y - s * 0.05f);
+            dl->AddTriangleFilled(apex, ml, mr, col);
+            dl->AddTriangleFilled(ml, bl, bm, col);
+            dl->AddTriangleFilled(mr, bm, br, col);
+            break;
+        }
+        case 1: { // Epona's Song: ferradura
+            dl->PathArcTo(c, R * 0.62f, kPi * 0.62f, kPi * 2.38f, 24);
+            dl->PathStroke(col, 0, R * 0.3f);
+            for (int k = 0; k < 3; k++) {
+                float a = kPi * (1.0f + 0.5f * (float)k);
+                dl->AddCircleFilled(ImVec2(c.x + cosf(a) * R * 0.62f, c.y + sinf(a) * R * 0.62f), R * 0.07f,
+                                    kDiscColor);
+            }
+            break;
+        }
+        case 2: { // Saria's Song: folha
+            const float a = -kPi * 0.25f;
+            DrawLens(dl, c, R * 0.95f, R * 0.55f, a, col);
+            ImVec2 d(cosf(a) * R * 0.75f, sinf(a) * R * 0.75f);
+            dl->AddLine(ImVec2(c.x - d.x, c.y - d.y), ImVec2(c.x + d.x, c.y + d.y), kDiscColor, 1.5f);
+            break;
+        }
+        case 3: { // Sun's Song: sol e lua
+            ImVec2 sc(c.x - R * 0.2f, c.y - R * 0.15f);
+            const float sr = R * 0.4f;
+            dl->AddCircleFilled(sc, sr, col, 24);
+            for (int k = 0; k < 8; k++) {
+                float a = kPi * 0.25f * (float)k;
+                dl->AddLine(ImVec2(sc.x + cosf(a) * sr * 1.35f, sc.y + sinf(a) * sr * 1.35f),
+                            ImVec2(sc.x + cosf(a) * sr * 1.9f, sc.y + sinf(a) * sr * 1.9f), col, 2.5f);
+            }
+            DrawCrescent(dl, ImVec2(c.x + R * 0.5f, c.y + R * 0.45f), R * 0.35f, IM_COL32(235, 235, 255, 255));
+            break;
+        }
+        case 4: { // Song of Time: ampulheta
+            const float w = R * 0.6f, h = R * 0.85f;
+            dl->AddTriangleFilled(ImVec2(c.x - w, c.y - h), ImVec2(c.x + w, c.y - h), ImVec2(c.x, c.y), col);
+            dl->AddTriangleFilled(ImVec2(c.x - w, c.y + h), ImVec2(c.x + w, c.y + h), ImVec2(c.x, c.y), col);
+            const float bar = R * 0.14f;
+            dl->AddRectFilled(ImVec2(c.x - w - bar, c.y - h - bar), ImVec2(c.x + w + bar, c.y - h + bar),
+                              IM_COL32(235, 235, 255, 255), 2.0f);
+            dl->AddRectFilled(ImVec2(c.x - w - bar, c.y + h - bar), ImVec2(c.x + w + bar, c.y + h + bar),
+                              IM_COL32(235, 235, 255, 255), 2.0f);
+            break;
+        }
+        case 5: { // Song of Storms: nuvem e raio
+            dl->AddCircleFilled(ImVec2(c.x - R * 0.4f, c.y - R * 0.15f), R * 0.35f, col, 20);
+            dl->AddCircleFilled(ImVec2(c.x + R * 0.05f, c.y - R * 0.35f), R * 0.42f, col, 20);
+            dl->AddCircleFilled(ImVec2(c.x + R * 0.45f, c.y - R * 0.1f), R * 0.32f, col, 20);
+            dl->AddRectFilled(ImVec2(c.x - R * 0.5f, c.y - R * 0.15f), ImVec2(c.x + R * 0.55f, c.y + R * 0.17f), col,
+                              4.0f);
+            ImVec2 p0(c.x + R * 0.1f, c.y + R * 0.0f);
+            ImVec2 p1(c.x - R * 0.2f, c.y + R * 0.45f);
+            ImVec2 p2(c.x + R * 0.05f, c.y + R * 0.45f);
+            ImVec2 p3(c.x - R * 0.15f, c.y + R * 0.95f);
+            const ImU32 bolt = IM_COL32(255, 230, 70, 255);
+            dl->AddLine(p0, p1, bolt, 3.0f);
+            dl->AddLine(p1, p2, bolt, 3.0f);
+            dl->AddLine(p2, p3, bolt, 3.0f);
+            break;
+        }
+        case 6: { // Minuet of Forest: árvore
+            dl->AddRectFilled(ImVec2(c.x - R * 0.12f, c.y + R * 0.5f), ImVec2(c.x + R * 0.12f, c.y + R * 0.92f),
+                              IM_COL32(140, 90, 50, 255));
+            const float apexY[3] = { -0.2f, -0.55f, -0.95f };
+            const float baseY[3] = { 0.6f, 0.15f, -0.25f };
+            const float halfW[3] = { 0.8f, 0.62f, 0.45f };
+            for (int k = 0; k < 3; k++) {
+                ImVec2 apex(c.x, c.y + R * apexY[k]);
+                ImVec2 l(c.x - R * halfW[k], c.y + R * baseY[k]);
+                ImVec2 r(c.x + R * halfW[k], c.y + R * baseY[k]);
+                dl->AddTriangleFilled(apex, l, r, col);
+                dl->AddTriangle(apex, l, r, kDiscColor, 1.5f);
+            }
+            break;
+        }
+        case 7: { // Bolero of Fire: chama
+            dl->AddCircleFilled(ImVec2(c.x, c.y + R * 0.3f), R * 0.55f, col, 24);
+            dl->AddTriangleFilled(ImVec2(c.x + R * 0.05f, c.y - R * 0.95f), ImVec2(c.x - R * 0.5f, c.y + R * 0.15f),
+                                  ImVec2(c.x + R * 0.5f, c.y + R * 0.15f), col);
+            dl->AddTriangleFilled(ImVec2(c.x - R * 0.5f, c.y - R * 0.45f), ImVec2(c.x - R * 0.58f, c.y + R * 0.25f),
+                                  ImVec2(c.x - R * 0.1f, c.y + R * 0.0f), col);
+            const ImU32 inner = IM_COL32(255, 225, 110, 255);
+            dl->AddCircleFilled(ImVec2(c.x, c.y + R * 0.4f), R * 0.28f, inner, 20);
+            dl->AddTriangleFilled(ImVec2(c.x, c.y - R * 0.2f), ImVec2(c.x - R * 0.26f, c.y + R * 0.3f),
+                                  ImVec2(c.x + R * 0.26f, c.y + R * 0.3f), inner);
+            break;
+        }
+        case 8: { // Serenade of Water: gota
+            dl->AddCircleFilled(ImVec2(c.x, c.y + R * 0.3f), R * 0.6f, col, 24);
+            dl->AddTriangleFilled(ImVec2(c.x, c.y - R * 0.95f), ImVec2(c.x - R * 0.55f, c.y + R * 0.1f),
+                                  ImVec2(c.x + R * 0.55f, c.y + R * 0.1f), col);
+            dl->AddCircleFilled(ImVec2(c.x - R * 0.22f, c.y + R * 0.38f), R * 0.1f, IM_COL32(235, 245, 255, 255), 12);
+            break;
+        }
+        case 9: { // Requiem of Spirit: olho
+            DrawLens(dl, c, R * 0.95f, R * 0.55f, 0.0f, col);
+            dl->AddCircleFilled(c, R * 0.33f, kDiscColor, 20);
+            dl->AddCircleFilled(ImVec2(c.x - R * 0.1f, c.y - R * 0.1f), R * 0.1f, col, 12);
+            break;
+        }
+        case 10: { // Nocturne of Shadow: lua crescente e estrela
+            DrawCrescent(dl, c, R * 0.85f, col);
+            dl->AddCircleFilled(ImVec2(c.x + R * 0.5f, c.y + R * 0.35f), R * 0.1f, col, 12);
+            break;
+        }
+        case 11: { // Prelude of Light: estrela de luz
+            for (int k = 0; k < 8; k++) {
+                float a = kPi * 0.25f * (float)k;
+                float len = (k % 2 == 0) ? R : R * 0.65f;
+                float dx = cosf(a), dy = sinf(a);
+                float px = -dy, py = dx;
+                const float baseR = R * 0.2f, w = R * 0.17f;
+                ImVec2 b1(c.x + dx * baseR + px * w, c.y + dy * baseR + py * w);
+                ImVec2 b2(c.x + dx * baseR - px * w, c.y + dy * baseR - py * w);
+                dl->AddTriangleFilled(ImVec2(c.x + dx * len, c.y + dy * len), b1, b2, col);
+            }
+            dl->AddCircleFilled(c, R * 0.3f, col, 20);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+// Nota da pauta: usa a textura do jogo (gSongNoteTex) tingida; se não existir, desenha um bloquinho
 void DrawNoteBlock(ImDrawList* dl, ImVec2 c, BtnNote n) {
+    ImU32 tint = (n == BN_A) ? IM_COL32(90, 130, 255, 255) : IM_COL32(255, 215, 60, 255);
+
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
+    if (gui != nullptr) {
+        auto tex = gui->GetTextureByName("gSongNoteTex");
+        if (tex) {
+            ImVec2 sz = gui->GetTextureSize("gSongNoteTex");
+            const float h = 34.0f;
+            float w = (sz.x > 0.0f && sz.y > 0.0f) ? h * sz.x / sz.y : h;
+            dl->AddImage(tex, ImVec2(c.x - w * 0.5f, c.y - h * 0.5f), ImVec2(c.x + w * 0.5f, c.y + h * 0.5f),
+                         ImVec2(0, 0), ImVec2(1, 1), tint);
+            return;
+        }
+    }
+
+    // Fallback: bloquinho com a letra/seta do botão
     const char* labels[] = { "A", "v", ">", "<", "^" };
-    ImU32 bg = (n == BN_A) ? IM_COL32(60, 90, 220, 255) : IM_COL32(230, 190, 40, 255);
     ImU32 fg = (n == BN_A) ? IM_COL32_WHITE : IM_COL32(40, 30, 10, 255);
-    dl->AddRectFilled(ImVec2(c.x - 13, c.y - 11), ImVec2(c.x + 13, c.y + 11), bg, 4.0f);
+    dl->AddRectFilled(ImVec2(c.x - 13, c.y - 11), ImVec2(c.x + 13, c.y + 11), tint, 4.0f);
     dl->AddRect(ImVec2(c.x - 13, c.y - 11), ImVec2(c.x + 13, c.y + 11), IM_COL32(40, 30, 20, 255), 4.0f, 0, 1.5f);
     ImVec2 ts = ImGui::CalcTextSize(labels[n]);
     dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), fg, labels[n]);
+}
+
+// Dica discreta no rodapé enquanto a Ocarina está em uso e o menu está fechado
+void DrawOpenHint() {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const char* text = "D-Pad Down: Song Menu";
+    ImVec2 ts = ImGui::CalcTextSize(text);
+    const float padX = 16.0f, padY = 8.0f;
+    float cx = vp->Pos.x + vp->Size.x * 0.5f;
+    float y = vp->Pos.y + vp->Size.y * 0.93f;
+    ImVec2 pMin(cx - ts.x * 0.5f - padX, y - padY);
+    ImVec2 pMax(cx + ts.x * 0.5f + padX, y + ts.y + padY);
+    dl->AddRectFilled(pMin, pMax, IM_COL32(0, 0, 0, 150), 12.0f);
+    dl->AddRect(pMin, pMax, IM_COL32(255, 255, 255, 120), 12.0f, 0, 1.5f);
+    dl->AddText(ImVec2(cx - ts.x * 0.5f, y), IM_COL32_WHITE, text);
 }
 
 void DrawMenu() {
@@ -182,11 +390,9 @@ void DrawMenu() {
         ImVec2 c(cx + (t - 0.5f) * 2.0f * radX, vp->Pos.y + H * (top ? 0.30f : 0.42f) - sinf(3.14159f * t) * radY);
 
         bool learned = IsSongLearned(kSongs[i]);
-        dl->AddCircleFilled(c, r, learned ? IM_COL32(25, 25, 30, 235) : IM_COL32(110, 110, 110, 150));
+        dl->AddCircleFilled(c, r, learned ? kDiscColor : IM_COL32(110, 110, 110, 150), 32);
         if (learned) {
-            dl->AddCircleFilled(c, r * 0.62f, kSongs[i].color);
-            ImVec2 ts = ImGui::CalcTextSize(kSongs[i].glyph);
-            dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), IM_COL32(20, 20, 20, 255), kSongs[i].glyph);
+            DrawSongIcon(dl, c, r * 0.72f, i, kSongs[i].color);
         }
         if (i == sSel) {
             dl->AddCircle(c, r + 4.0f, IM_COL32_WHITE, 0, 3.5f);
@@ -272,7 +478,22 @@ void OcarinaSongMenuWindow::DrawElement() {
 
     // ---- Só funciona com a opção ligada, em gameplay e com a Ocarina ativa ----
     bool enabled = CVarGetInteger(CVAR_OCA_MENU_NAME, 0) != 0;
-    bool ocarinaActive = enabled && IsGameplayReady() && AudioOcarina_IsActive() != 0;
+    bool ready = IsGameplayReady();
+    bool active = AudioOcarina_IsActive() != 0;
+    bool ocarinaActive = enabled && ready && active;
+
+#if OSM_DEBUG
+    {
+        char dbg[256];
+        snprintf(dbg, sizeof(dbg), "OSM debug | option=%d ready=%d ocarinaActive=%d pads=%s buttons=0x%04X pressed=0x%04X open=%d",
+                 enabled ? 1 : 0, ready ? 1 : 0, active ? 1 : 0, pads != nullptr ? "ok" : "NULL", cur, pressed,
+                 sOpen ? 1 : 0);
+        ImVec2 pos(ImGui::GetMainViewport()->Pos.x + 10.0f, ImGui::GetMainViewport()->Pos.y + 40.0f);
+        ImGui::GetForegroundDrawList()->AddText(ImVec2(pos.x + 1, pos.y + 1), IM_COL32(0, 0, 0, 255), dbg);
+        ImGui::GetForegroundDrawList()->AddText(pos, IM_COL32(255, 255, 0, 255), dbg);
+    }
+#endif
+
     if (!ocarinaActive) {
         CloseMenu();
         return;
@@ -286,6 +507,7 @@ void OcarinaSongMenuWindow::DrawElement() {
         }
     }
     if (!sOpen) {
+        DrawOpenHint();
         return;
     }
 
