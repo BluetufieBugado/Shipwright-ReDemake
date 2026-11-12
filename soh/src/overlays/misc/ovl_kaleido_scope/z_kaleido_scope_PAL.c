@@ -1445,6 +1445,10 @@ extern s16 KaleidoScope_GetItemSlotFrameBottom(s16 slot);
 
 // Layout da aba Equipamento no menu em abas (definido em z_kaleido_equipment.c)
 extern bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx);
+extern bool KaleidoScope_IsTabbedQuestPage(PauseContext* pauseCtx);
+extern bool KaleidoScope_GetQuestSlotScreen(s16 slot, s16* x, s16* y, s16* ring);
+extern bool KaleidoScope_IsQuestSlotOwned(s16 slot);
+extern void KaleidoScope_SetQuestTabbedVertices(PauseContext* pauseCtx);
 extern void KaleidoScope_GetEquipSlotCenter(s16 slot, s16* x, s16* y);
 extern s16 KaleidoScope_GetEquipIconSize(void);
 extern s16 KaleidoScope_GetEquipSlotIconSize(s16 slot);
@@ -1479,13 +1483,15 @@ static bool KaleidoScope_IsTabbedItemPage(PauseContext* pauseCtx) {
 // Faixa azul com o nome (e o "A to Equip" do rodape original): some nas abas Itens e Equipamento, que desenham o nome
 // por conta propria (painel de detalhes / dentro do oval).
 static bool KaleidoScope_HideNamePanel(PauseContext* pauseCtx) {
-    return KaleidoScope_IsTabbedItemPage(pauseCtx) || KaleidoScope_IsTabbedEquipPage(pauseCtx);
+    return KaleidoScope_IsTabbedItemPage(pauseCtx) || KaleidoScope_IsTabbedEquipPage(pauseCtx) ||
+           KaleidoScope_IsTabbedQuestPage(pauseCtx);
 }
 
 // Icones L/R das setas de pagina: escondidos nas abas Itens e (opcionalmente) Equipamento
 static bool KaleidoScope_HidePageArrowIcons(PauseContext* pauseCtx) {
     return KaleidoScope_IsTabbedItemPage(pauseCtx) ||
-           (EQUIP_HIDE_PAGE_ARROWS && KaleidoScope_IsTabbedEquipPage(pauseCtx));
+           (EQUIP_HIDE_PAGE_ARROWS && KaleidoScope_IsTabbedEquipPage(pauseCtx)) ||
+           KaleidoScope_IsTabbedQuestPage(pauseCtx);
 }
 
 void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
@@ -1833,12 +1839,16 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
                     POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->saveVtx, sGameOverTexs);
                     RandoKaleido_DrawMiscCollectibles(play);
                 } else {
-                    POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->questPageVtx,
-                                                                  sQuestStatusTexs[gSaveContext.language]);
+                    // Menu em abas: o fundo de pedra sai; o fundo e as molduras sao desenhados por codigo
+                    // (KaleidoScope_DrawQuestFrames) e a moldura dourada faz o papel do cursor
+                    if (!KaleidoScope_IsTabbedQuestPage(pauseCtx)) {
+                        POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, pauseCtx->questPageVtx,
+                                                                      sQuestStatusTexs[gSaveContext.language]);
+                    }
                     KaleidoScope_DrawQuestStatus(play, gfxCtx);
                 }
 
-                if (pauseCtx->cursorSpecialPos == 0) {
+                if ((pauseCtx->cursorSpecialPos == 0) && !KaleidoScope_IsTabbedQuestPage(pauseCtx)) {
                     KaleidoScope_DrawCursor(play, PAUSE_QUEST);
                 }
                 break;
@@ -3645,6 +3655,11 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
             pauseCtx->questVtx[phi_t4 + 2].v.cn[3] = pauseCtx->questVtx[phi_t4 + 3].v.cn[3] = pauseCtx->alpha;
     }
 
+    // Menu em abas: posiciona os slots da aba Colecao (layout em z_kaleido_collect.c)
+    if (KaleidoScope_IsTabbedQuestPage(pauseCtx)) {
+        KaleidoScope_SetQuestTabbedVertices(pauseCtx);
+    }
+
     pauseCtx->infoPanelVtx = Graph_Alloc(gfxCtx, 28 * sizeof(Vtx));
 
     pauseCtx->saveVtx = Graph_Alloc(gfxCtx, 80 * sizeof(Vtx));
@@ -5223,6 +5238,223 @@ static void KaleidoScope_DrawItemPageBackground(PlayState* play, u8 alpha, bool 
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Aba Colecao, como no remake: painel esquerdo preto com o item em destaque (nome, divisor e descricao) e, a direita,
+// um hexagono de bronze com os medalhoes nos vertices e as pedras espirituais no centro. As posicoes dos slots vem de
+// z_kaleido_collect.c (sQuestSlotLayout); aqui so se desenha o que fica atras dos icones (fundo e molduras) e o painel.
+// ---------------------------------------------------------------------------------------------------------------
+#define QUEST_PANEL_EDGE 128
+#define QUEST_PANEL_CX 66
+#define QUEST_PREVIEW_SIZE 64
+#define QUEST_PREVIEW_Y 62
+#define QUEST_NAME_SC 118
+#define QUEST_DESC_SC 90
+#define QUEST_DESC_LINE_H 10
+#define QUEST_HEX_CX 208
+#define QUEST_HEX_CY 122
+
+typedef struct {
+    const char* name;
+    const char* desc;
+} QuestSlotText;
+
+// Indice = slot da aba Colecao. Acentos funcionam desde que a fonte tenha o glifo (senao aparece '?').
+static const QuestSlotText sQuestSlotTexts[25] = {
+    { "Medalhão da Floresta", "Medalhão sagrado de Saria, a Sábia da Floresta." },
+    { "Medalhão do Fogo", "Medalhão sagrado de Darunia, o Sábio do Fogo." },
+    { "Medalhão da Água", "Medalhão sagrado de Ruto, a Sábia da Água." },
+    { "Medalhão do Espírito", "Medalhão sagrado de Nabooru, a Sábia do Espírito." },
+    { "Medalhão da Sombra", "Medalhão sagrado de Impa, a Sábia da Sombra." },
+    { "Medalhão da Luz", "Medalhão sagrado de Rauru, o Sábio da Luz." },
+    { NULL, NULL }, { NULL, NULL }, { NULL, NULL }, { NULL, NULL }, { NULL, NULL }, { NULL, NULL },
+    { NULL, NULL }, { NULL, NULL }, { NULL, NULL }, { NULL, NULL }, { NULL, NULL }, { NULL, NULL },
+    { "Esmeralda Kokiri", "Pedra espiritual da floresta, confiada pela Grande Árvore Deku." },
+    { "Rubi Goron", "Pedra espiritual dos Gorons, presente de Darunia." },
+    { "Safira Zora", "Pedra espiritual do povo Zora, entregue pela Princesa Ruto." },
+    { "Pedra da Agonia", "Faz o controle vibrar quando há um segredo por perto." },
+    { "Cartão Gerudo", "Prova de que você é membro honorário das ladras Gerudo." },
+    { "Skulltula Dourada", "Símbolos das Skulltulas Douradas que você já derrotou." },
+    { "Peça de Coração", "Reúna quatro peças para ganhar um novo coração." },
+};
+
+static void KaleidoScope_DrawQuestDisc(PlayState* play, s32 cx, s32 cy, s32 r, u8 cr, u8 cg, u8 cb, u8 a) {
+    s32 dy;
+
+    for (dy = -r; dy <= r; dy++) {
+        s32 hw = (s32)sqrtf((f32)(r * r - dy * dy) + 0.5f);
+
+        KaleidoScope_TabBarFill(play, cx - hw, cy + dy, cx + hw + 1, cy + dy + 1, cr, cg, cb, a);
+    }
+}
+
+// Hexagono com vertices em cima e embaixo (lados verticais), circunraio rh
+static void KaleidoScope_DrawQuestHex(PlayState* play, s32 cx, s32 cy, s32 rh, u8 cr, u8 cg, u8 cb, u8 a) {
+    s32 dy;
+
+    for (dy = -rh; dy <= rh; dy++) {
+        s32 ady = abs(dy);
+        s32 hw = (ady * 2 <= rh) ? (rh * 866 / 1000) : ((rh - ady) * 1732 / 1000);
+
+        if (hw > 0) {
+            KaleidoScope_TabBarFill(play, cx - hw, cy + dy, cx + hw, cy + dy + 1, cr, cg, cb, a);
+        }
+    }
+}
+
+// Fundo da aba Colecao (desenhado atras dos icones): painel preto da esquerda, hexagono, faixa das pedras e
+// molduras redondas de cada slot (a do slot selecionado fica dourada e mais clara, no lugar do cursor).
+static void KaleidoScope_DrawQuestFrames(PlayState* play, u8 alpha) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 l = OTRGetRectDimensionFromLeftEdge(0);
+    s16 selected = (pauseCtx->cursorSpecialPos == 0) ? pauseCtx->cursorSlot[PAUSE_QUEST] : -1;
+    s16 slot;
+    s32 i;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    KaleidoScope_SetupFillState(play);
+
+    // Painel esquerdo preto, com transicao suave para o marrom
+    for (i = 0; i < 6; i++) {
+        u8 a = (u8)(alpha * ((6 - i) * 36) / 255);
+        KaleidoScope_TabBarFill(play, QUEST_PANEL_EDGE + i * 3, 0, QUEST_PANEL_EDGE + i * 3 + 3, SCREEN_HEIGHT, 6, 6, 9,
+                                a);
+    }
+    KaleidoScope_TabBarFill(play, l, 0, QUEST_PANEL_EDGE, SCREEN_HEIGHT, 6, 6, 9, alpha);
+
+    // Hexagono de bronze: sombra, borda dourada, pedra, filete e miolo
+    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 80, 26, 18, 12, alpha);
+    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 78, 132, 102, 58, alpha);
+    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 76, 92, 70, 46, alpha);
+    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 64, 126, 98, 60, alpha);
+    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 63, 82, 62, 40, alpha);
+
+    // Faixa central das pedras espirituais
+    KaleidoScope_TabBarFill(play, 162, 106, 254, 138, 150, 118, 66, alpha);
+    KaleidoScope_TabBarFill(play, 163, 107, 253, 137, 60, 44, 28, alpha);
+
+    // Molduras redondas
+    for (slot = 0; slot < 25; slot++) {
+        s16 sx;
+        s16 sy;
+        s16 ring;
+        bool owned;
+
+        if (!KaleidoScope_GetQuestSlotScreen(slot, &sx, &sy, &ring)) {
+            continue;
+        }
+        owned = KaleidoScope_IsQuestSlotOwned(slot);
+
+        if (slot == selected) {
+            KaleidoScope_DrawQuestDisc(play, sx, sy, ring + 4, 255, 226, 140, (u8)(alpha * 90 / 255));
+            KaleidoScope_DrawQuestDisc(play, sx, sy, ring + 2, 255, 232, 150, alpha);
+        } else {
+            KaleidoScope_DrawQuestDisc(play, sx, sy, ring + 2, 22, 15, 10, alpha);
+        }
+        KaleidoScope_DrawQuestDisc(play, sx, sy, ring, owned ? 176 : 112, owned ? 138 : 86, owned ? 78 : 54, alpha);
+        KaleidoScope_DrawQuestDisc(play, sx, sy, ring - 2, owned ? 40 : 34, owned ? 29 : 25, owned ? 20 : 18, alpha);
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Painel esquerdo da aba Colecao: item em destaque, nome, divisor com losango e descricao
+static void KaleidoScope_DrawQuestDetailPanel(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    s16 slot = pauseCtx->cursorSlot[PAUSE_QUEST];
+    const QuestSlotText* text;
+    char nameBuf[64];
+    s32 pieces = (gSaveContext.inventory.questItems >> 28) & 0xF;
+    s32 iconX = QUEST_PANEL_CX - QUEST_PREVIEW_SIZE / 2;
+    s32 iconY = QUEST_PREVIEW_Y;
+    s32 availWq = (QUEST_PANEL_EDGE - 14) * 4;
+    s32 nameSc = QUEST_NAME_SC;
+    s32 nameWq;
+    s32 nameY;
+    s32 dividerY;
+    s32 lineH;
+    s32 halfDiv;
+
+    if (pauseCtx->cursorSpecialPos != 0 || slot < 0 || slot >= 25 || !KaleidoScope_IsQuestSlotOwned(slot)) {
+        return;
+    }
+    text = &sQuestSlotTexts[slot];
+    if (text->name == NULL) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    // Item grande (medalhoes/pedras/etc. sao RGBA32 24x24; a peca de coracao e IA8 48x48)
+    KaleidoScope_SetupFillState(play);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    if (slot == 24) {
+        gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
+                          TEXEL0, 0, PRIMITIVE, 0);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 90, 90, alpha);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, gItemIcons[0x79 + pieces], G_IM_FMT_IA, G_IM_SIZ_8b, 48, 48, 0,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                            G_TX_NOLOD, G_TX_NOLOD);
+        gSPWideTextureRectangle(POLY_OPA_DISP++, iconX << 2, iconY << 2, (iconX + QUEST_PREVIEW_SIZE) << 2,
+                                (iconY + QUEST_PREVIEW_SIZE) << 2, G_TX_RENDERTILE, 0, 0,
+                                (1 << 10) * 48 / QUEST_PREVIEW_SIZE, (1 << 10) * 48 / QUEST_PREVIEW_SIZE);
+    } else {
+        void* icon = (slot < 6)    ? (void*)gItemIcons[ITEM_MEDALLION_FOREST + slot]
+                     : (slot < 21) ? (void*)gItemIcons[ITEM_KOKIRI_EMERALD + slot - 18]
+                                   : (void*)gItemIcons[ITEM_STONE_OF_AGONY + slot - 21];
+
+        gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, icon, G_IM_FMT_RGBA, G_IM_SIZ_32b, 24, 24, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        gSPWideTextureRectangle(POLY_OPA_DISP++, iconX << 2, iconY << 2, (iconX + QUEST_PREVIEW_SIZE) << 2,
+                                (iconY + QUEST_PREVIEW_SIZE) << 2, G_TX_RENDERTILE, 0, 0,
+                                (1 << 10) * 24 / QUEST_PREVIEW_SIZE, (1 << 10) * 24 / QUEST_PREVIEW_SIZE);
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    // Nome (com a contagem nos itens que acumulam)
+    if (slot == 23) {
+        snprintf(nameBuf, sizeof(nameBuf), "%s  %d", text->name, (int)gSaveContext.inventory.gsTokens);
+    } else if (slot == 24) {
+        snprintf(nameBuf, sizeof(nameBuf), "%s (%d/4)", text->name, (int)pieces);
+    } else {
+        snprintf(nameBuf, sizeof(nameBuf), "%s", text->name);
+    }
+
+    nameWq = KaleidoScope_FontWidthQ(nameBuf, -1, nameSc);
+    if (nameWq > availWq) { // nome comprido: reduz a escala para caber
+        nameSc = nameSc * availWq / nameWq;
+        if (nameSc < 70) {
+            nameSc = 70;
+        }
+        nameWq = KaleidoScope_FontWidthQ(nameBuf, -1, nameSc);
+    }
+    nameY = iconY + QUEST_PREVIEW_SIZE + 8;
+    lineH = (TABFONT_GH * nameSc / 100) / 4 + 1;
+    KaleidoScope_FontDraw(play, nameBuf, -1, QUEST_PANEL_CX * 4 - nameWq / 2, nameY, nameSc, 255, 244, 214, alpha);
+
+    // Divisor com losango
+    dividerY = nameY + lineH + 3;
+    halfDiv = 46;
+    KaleidoScope_SetupFillState(play);
+    KaleidoScope_TabBarFill(play, QUEST_PANEL_CX - halfDiv, dividerY, QUEST_PANEL_CX - 6, dividerY + 1, 150, 118, 66,
+                            alpha);
+    KaleidoScope_TabBarFill(play, QUEST_PANEL_CX + 7, dividerY, QUEST_PANEL_CX + halfDiv + 1, dividerY + 1, 150, 118,
+                            66, alpha);
+    KaleidoScope_DrawDiamond(play, QUEST_PANEL_CX, dividerY, 2, 190, 150, 84, alpha);
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    if (text->desc != NULL && text->desc[0] != '\0') {
+        KaleidoScope_FontDrawWrapped(play, text->desc, QUEST_PANEL_CX * 4, dividerY + 6, QUEST_DESC_LINE_H,
+                                     (QUEST_PANEL_EDGE - 16) * 4, QUEST_DESC_SC, 222, 212, 186, alpha);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void KaleidoScope_Draw(PlayState* play) {
     Input* input = &play->state.input[0];
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -5292,6 +5524,10 @@ void KaleidoScope_Draw(PlayState* play) {
             } else if (KaleidoScope_IsTabbedEquipPage(pauseCtx)) {
                 // Pagina de equipamento: o mesmo fundo marrom, sem o painel da direita
                 KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha, false);
+            } else if (KaleidoScope_IsTabbedQuestPage(pauseCtx)) {
+                // Pagina Colecao: mesmo fundo marrom, com painel preto a esquerda e o hexagono dos medalhoes
+                KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha, false);
+                KaleidoScope_DrawQuestFrames(play, (u8)bgAlpha);
             }
         }
 
@@ -5325,6 +5561,11 @@ void KaleidoScope_Draw(PlayState* play) {
         // Painel de detalhes do item (pagina de itens com o menu aberto)
         if (tabbedMenu && pauseCtx->state == 6 && pauseCtx->pageIndex == PAUSE_ITEM) {
             KaleidoScope_DrawItemDetailPanel(play);
+        }
+
+        // Painel de detalhes da aba Colecao (menu aberto)
+        if (tabbedMenu && pauseCtx->state == 6 && KaleidoScope_IsTabbedQuestPage(pauseCtx)) {
+            KaleidoScope_DrawQuestDetailPanel(play);
         }
 
         // Nome do equipamento dentro do oval (pagina de equipamento com o menu aberto)

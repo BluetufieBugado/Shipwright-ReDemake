@@ -8,6 +8,402 @@
 
 extern const char* digitTextures[];
 
+// ---------------------------------------------------------------------------------------------------------------
+// Aba Colecao no menu em abas (como no remake): medalhoes nos vertices de um hexagono, pedras espirituais na faixa
+// central, e uma coluna a direita com Skulltula Dourada, Peca de Coracao, Pedra da Agonia e Cartao Gerudo.
+// As musicas sairam desta aba. O fundo, as molduras e o painel de detalhes sao desenhados em z_kaleido_scope_PAL.c
+// (KaleidoScope_DrawQuestFrames / KaleidoScope_DrawQuestDetailPanel); aqui ficam o layout, a navegacao e os icones.
+// ---------------------------------------------------------------------------------------------------------------
+#define QUEST_SLOT_COUNT 25
+#define QUEST_SLOT_HEART_PIECE 24
+#define QUEST_PAGE_SCALE_X100 103 // 1 unidade de pagina ~ 1,03 unidades de tela (igual ao EQUIP_PAGE_TO_SCREEN)
+
+typedef struct {
+    s16 x;    // centro do slot, em unidades de tela (320x240)
+    s16 y;    // idem
+    s16 icon; // lado do icone, em unidades da pagina (0 = slot que nao existe nesta aba)
+    s16 ring; // raio da moldura redonda, em unidades de tela
+} QuestSlotLayout;
+
+// Indice = numero do slot do jogo (QUEST_MEDALLION_FOREST = 0 ... heart piece = 24). Slots 6..17 eram as musicas.
+static const QuestSlotLayout sQuestSlotLayout[QUEST_SLOT_COUNT] = {
+    { 262, 91, 28, 19 },  // 0  Medalhao da Floresta (vertice superior direito)
+    { 262, 153, 28, 19 }, // 1  Medalhao do Fogo (inferior direito)
+    { 208, 184, 28, 19 }, // 2  Medalhao da Agua (inferior)
+    { 154, 153, 28, 19 }, // 3  Medalhao do Espirito (inferior esquerdo)
+    { 154, 91, 28, 19 },  // 4  Medalhao da Sombra (superior esquerdo)
+    { 208, 60, 28, 19 },  // 5  Medalhao da Luz (superior)
+    { 0, 0, 0, 0 },       // 6..17 musicas: nao existem mais aqui
+    { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 180, 122, 24, 15 }, // 18 Esmeralda Kokiri (centro do hexagono)
+    { 208, 122, 24, 15 }, // 19 Rubi Goron
+    { 236, 122, 24, 15 }, // 20 Safira Zora
+    { 300, 139, 24, 15 }, // 21 Pedra da Agonia (coluna da direita)
+    { 300, 177, 24, 15 }, // 22 Cartao Gerudo
+    { 300, 50, 24, 15 },  // 23 Skulltula Dourada (o contador fica logo abaixo)
+    { 300, 101, 28, 15 }, // 24 Peca de Coracao
+};
+
+// Navegacao: { cima, baixo, esquerda, direita }. -1 = nada, -3 = seta de pagina da esquerda, -2 = da direita.
+static const s8 sQuestNav[QUEST_SLOT_COUNT][4] = {
+    { 5, 1, 20, 24 },      // 0  Floresta
+    { 0, 2, 20, 21 },      // 1  Fogo
+    { 19, -1, 3, 1 },      // 2  Agua
+    { 4, 2, -3, 18 },      // 3  Espirito
+    { 5, 3, -3, 18 },      // 4  Sombra
+    { -1, 19, 4, 0 },      // 5  Luz
+    { -1, -1, -1, -1 },    // 6..17
+    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },
+    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },
+    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },    { -1, -1, -1, -1 },
+    { 5, 2, 4, 19 },       // 18 Kokiri
+    { 5, 2, 18, 20 },      // 19 Goron
+    { 0, 1, 19, 24 },      // 20 Zora
+    { 24, 22, 1, -2 },     // 21 Agonia
+    { 21, -1, 1, -2 },     // 22 Cartao Gerudo
+    { -1, 24, 0, -2 },     // 23 Skulltula
+    { 23, 21, 0, -2 },     // 24 Peca de Coracao
+};
+
+bool KaleidoScope_IsTabbedQuestPage(PauseContext* pauseCtx) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_QUEST &&
+           !pauseCtx->randoQuestMode;
+}
+
+bool KaleidoScope_GetQuestSlotScreen(s16 slot, s16* x, s16* y, s16* ring) {
+    if (slot < 0 || slot >= QUEST_SLOT_COUNT || sQuestSlotLayout[slot].icon == 0) {
+        return false;
+    }
+    *x = sQuestSlotLayout[slot].x;
+    *y = sQuestSlotLayout[slot].y;
+    *ring = sQuestSlotLayout[slot].ring;
+    return true;
+}
+
+bool KaleidoScope_IsQuestSlotOwned(s16 slot) {
+    if (slot < 0 || slot >= QUEST_SLOT_COUNT || sQuestSlotLayout[slot].icon == 0) {
+        return false;
+    }
+    if (slot == QUEST_SLOT_HEART_PIECE) {
+        return (gSaveContext.inventory.questItems & 0xF0000000) != 0;
+    }
+    return CHECK_QUEST_ITEM(slot);
+}
+
+// Posiciona os quadrilateros (questVtx) de cada slot e dos digitos da Skulltula. Chamado pelo InitVertices a cada
+// quadro, depois do preenchimento padrao. So muda posicao/tamanho (ob); as coordenadas de textura continuam as do jogo.
+void KaleidoScope_SetQuestTabbedVertices(PauseContext* pauseCtx) {
+    s16 slot;
+    s16 k;
+    s16 n;
+    s16 pcx;
+    s16 ytop;
+
+    for (slot = 0; slot < QUEST_SLOT_COUNT; slot++) {
+        const QuestSlotLayout* l = &sQuestSlotLayout[slot];
+        Vtx* v = &pauseCtx->questVtx[slot * 4];
+        s16 half = l->icon / 2;
+        s16 px = ((l->x - 160) * 100) / QUEST_PAGE_SCALE_X100;
+        s16 py = ((120 - l->y) * 100) / QUEST_PAGE_SCALE_X100;
+
+        if (l->icon == 0) {
+            continue;
+        }
+
+        v[0].v.ob[0] = v[2].v.ob[0] = px - half;
+        v[1].v.ob[0] = v[3].v.ob[0] = px + half;
+        v[0].v.ob[1] = v[1].v.ob[1] = py + half + pauseCtx->offsetY;
+        v[2].v.ob[1] = v[3].v.ob[1] = py - half + pauseCtx->offsetY;
+    }
+
+    // Contador de Skulltulas: ate 3 digitos, centralizado logo abaixo do icone. Quadrilateros 41..43 = sombra,
+    // 44..46 = digitos (o jogo so desenha os digitos que existem; o ultimo sempre).
+    n = (gSaveContext.inventory.gsTokens >= 100) ? 3 : (gSaveContext.inventory.gsTokens >= 10) ? 2 : 1;
+    pcx = ((sQuestSlotLayout[23].x - 160) * 100) / QUEST_PAGE_SCALE_X100;
+    ytop = ((120 - (sQuestSlotLayout[23].y + 18)) * 100) / QUEST_PAGE_SCALE_X100;
+
+    for (k = 0; k < 3; k++) {
+        s16 x0 = pcx - 12 + k * 8 + (4 * n - 12);
+        Vtx* shadow = &pauseCtx->questVtx[(41 + k) * 4];
+        Vtx* digit = &pauseCtx->questVtx[(44 + k) * 4];
+
+        digit[0].v.ob[0] = digit[2].v.ob[0] = x0;
+        digit[1].v.ob[0] = digit[3].v.ob[0] = x0 + 8;
+        digit[0].v.ob[1] = digit[1].v.ob[1] = ytop + pauseCtx->offsetY;
+        digit[2].v.ob[1] = digit[3].v.ob[1] = ytop + pauseCtx->offsetY - 16;
+
+        shadow[0].v.ob[0] = shadow[2].v.ob[0] = x0 + 2;
+        shadow[1].v.ob[0] = shadow[3].v.ob[0] = x0 + 10;
+        shadow[0].v.ob[1] = shadow[1].v.ob[1] = ytop + pauseCtx->offsetY - 2;
+        shadow[2].v.ob[1] = shadow[3].v.ob[1] = ytop + pauseCtx->offsetY - 18;
+    }
+}
+
+static void KaleidoScope_QuestCursorSfx(void) {
+    Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+}
+
+// Id do icone que o jogo guarda em cursorItem para cada slot (vazio = PAUSE_ITEM_NONE)
+static u16 KaleidoScope_QuestSlotCursorItem(s16 slot) {
+    if (slot == QUEST_SLOT_HEART_PIECE) {
+        return ((gSaveContext.inventory.questItems & 0xF0000000) != 0) ? 0x72 : PAUSE_ITEM_NONE;
+    }
+    if (!KaleidoScope_IsQuestSlotOwned(slot)) {
+        return PAUSE_ITEM_NONE;
+    }
+    return (slot < 6) ? (slot + 0x66) : (slot + 0x5A);
+}
+
+void KaleidoScope_DrawQuestStatusTabbed(PlayState* play, GraphicsContext* gfxCtx) {
+    static s16 sHeartPulse[][4] = {
+        { 255, 0, 0, 255 },
+        { 255, 70, 0, 150 },
+        { 255, 70, 0, 150 },
+        { 255, 0, 0, 255 },
+    };
+    static s16 sHeartR = 0;
+    static s16 sHeartG = 0;
+    static s16 sHeartB = 0;
+    static s16 sHeartA = 0;
+    static s16 sHeartTimer = 20;
+    static s16 sHeartIdx = 0;
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+    s16 slot;
+    s16 i;
+    s16 dr;
+    s16 dg;
+    s16 db;
+    s16 da;
+    s16 digits[3];
+    s16 shown;
+    s16 row;
+
+    OPEN_DISPS(gfxCtx);
+
+    // Cursor num slot que nao existe mais nesta aba (ex.: parado numa antiga musica): volta para a Luz
+    if (pauseCtx->cursorPoint[PAUSE_QUEST] < 0 || pauseCtx->cursorPoint[PAUSE_QUEST] >= QUEST_SLOT_COUNT ||
+        sQuestSlotLayout[pauseCtx->cursorPoint[PAUSE_QUEST]].icon == 0) {
+        pauseCtx->cursorPoint[PAUSE_QUEST] = 5;
+        pauseCtx->cursorSlot[PAUSE_QUEST] = 5;
+    }
+
+    if (pauseCtx->pageIndex == PAUSE_QUEST) {
+        if (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0)) {
+            if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
+                pauseCtx->stickRelX = -35;
+            } else if (CHECK_BTN_ALL(input->press.button, BTN_DRIGHT)) {
+                pauseCtx->stickRelX = 35;
+            } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN)) {
+                pauseCtx->stickRelY = -35;
+            } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+                pauseCtx->stickRelY = 35;
+            }
+        }
+        pauseCtx->cursorColorSet = 0;
+
+        if (pauseCtx->cursorSpecialPos == 0) {
+            pauseCtx->nameColorSet = 0;
+
+            if ((pauseCtx->state != 6) || ((pauseCtx->stickRelX == 0) && (pauseCtx->stickRelY == 0))) {
+                slot = pauseCtx->cursorSlot[PAUSE_QUEST];
+            } else {
+                s16 prev = pauseCtx->cursorPoint[PAUSE_QUEST];
+                s16 next = prev;
+                s16 target;
+                bool special = false;
+
+                if (pauseCtx->stickRelX < -30 || pauseCtx->stickRelX > 30) {
+                    target = sQuestNav[prev][(pauseCtx->stickRelX < 0) ? 2 : 3];
+                    if (target == -3) {
+                        KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
+                        special = true;
+                    } else if (target == -2) {
+                        KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+                        special = true;
+                    } else if (target >= 0) {
+                        next = target;
+                    }
+                }
+
+                if (!special && next == prev && (pauseCtx->stickRelY < -30 || pauseCtx->stickRelY > 30)) {
+                    target = sQuestNav[prev][(pauseCtx->stickRelY < 0) ? 1 : 0];
+                    if (target >= 0) {
+                        next = target;
+                    }
+                }
+
+                pauseCtx->cursorPoint[PAUSE_QUEST] = next;
+                if (next != prev) {
+                    KaleidoScope_QuestCursorSfx();
+                }
+
+                slot = pauseCtx->cursorPoint[PAUSE_QUEST];
+                pauseCtx->cursorItem[pauseCtx->pageIndex] = KaleidoScope_QuestSlotCursorItem(slot);
+                pauseCtx->cursorSlot[pauseCtx->pageIndex] = slot;
+            }
+
+            KaleidoScope_SetCursorVtx(pauseCtx, slot * 4, pauseCtx->questVtx);
+        } else {
+            // Cursor nas setas de pagina: volta para a grade ao apertar na direcao oposta
+            s16 back = (pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT) ? 4 : QUEST_SLOT_HEART_PIECE;
+            bool leaves = (pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT) ? (pauseCtx->stickRelX > 30)
+                                                                                 : (pauseCtx->stickRelX < -30);
+
+            if (leaves) {
+                pauseCtx->cursorPoint[PAUSE_QUEST] = back;
+                pauseCtx->nameDisplayTimer = 0;
+                pauseCtx->cursorSpecialPos = 0;
+                slot = back;
+                KaleidoScope_SetCursorVtx(pauseCtx, slot * 4, pauseCtx->questVtx);
+                KaleidoScope_QuestCursorSfx();
+                pauseCtx->cursorItem[pauseCtx->pageIndex] = KaleidoScope_QuestSlotCursorItem(slot);
+                pauseCtx->cursorSlot[pauseCtx->pageIndex] = slot;
+            } else {
+                slot = pauseCtx->cursorSlot[PAUSE_QUEST];
+            }
+        }
+    } else {
+        slot = pauseCtx->cursorSlot[PAUSE_QUEST];
+        KaleidoScope_SetCursorVtx(pauseCtx, slot * 4, pauseCtx->questVtx);
+    }
+
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+    gDPSetCombineLERP(POLY_OPA_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0, PRIMITIVE,
+                      ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0);
+
+    // Medalhoes
+    for (i = 0; i < 6; i++) {
+        if (CHECK_QUEST_ITEM(i)) {
+            gDPPipeSync(POLY_OPA_DISP++);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+            gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 0);
+            gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[i * 4], 4, 0);
+            KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, gItemIcons[ITEM_MEDALLION_FOREST + i], 24, 24, 0);
+        }
+    }
+
+    // Pedras espirituais
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+    gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 255);
+
+    for (i = 0; i < 3; i++) {
+        if (CHECK_QUEST_ITEM(18 + i)) {
+            gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[(18 + i) * 4], 4, 0);
+            KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, gItemIcons[ITEM_KOKIRI_EMERALD + i], 24, 24, 0);
+        }
+    }
+
+    // Pedra da Agonia, Cartao Gerudo e Skulltula Dourada
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+
+    for (i = 0; i < 3; i++) {
+        if (CHECK_QUEST_ITEM(21 + i)) {
+            gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[(21 + i) * 4], 4, 0);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+            KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, gItemIcons[ITEM_STONE_OF_AGONY + i], 24, 24, 0);
+        }
+    }
+
+    // Pulso de cor da Peca de Coracao (mesma animacao do jogo original)
+    if (sHeartTimer <= 0) {
+        sHeartTimer = 1;
+    }
+    dr = ABS(sHeartR - sHeartPulse[sHeartIdx][0]) / sHeartTimer;
+    dg = ABS(sHeartG - sHeartPulse[sHeartIdx][1]) / sHeartTimer;
+    db = ABS(sHeartB - sHeartPulse[sHeartIdx][2]) / sHeartTimer;
+    da = ABS(sHeartA - sHeartPulse[sHeartIdx][3]) / sHeartTimer;
+    sHeartR += (sHeartR >= sHeartPulse[sHeartIdx][0]) ? -dr : dr;
+    sHeartG += (sHeartG >= sHeartPulse[sHeartIdx][1]) ? -dg : dg;
+    sHeartB += (sHeartB >= sHeartPulse[sHeartIdx][2]) ? -db : db;
+    sHeartA += (sHeartA >= sHeartPulse[sHeartIdx][3]) ? -da : da;
+
+    if (--sHeartTimer == 0) {
+        sHeartR = sHeartPulse[sHeartIdx][0];
+        sHeartG = sHeartPulse[sHeartIdx][1];
+        sHeartB = sHeartPulse[sHeartIdx][2];
+        sHeartA = sHeartPulse[sHeartIdx][3];
+        sHeartTimer = ZREG(24 + sHeartIdx);
+        if (++sHeartIdx >= 4) {
+            sHeartIdx = 0;
+        }
+    }
+
+    if ((gSaveContext.inventory.questItems >> 0x1C) != 0) {
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPSetCombineLERP(POLY_OPA_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0,
+                          PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0);
+
+        if ((pauseCtx->state == 4) || (pauseCtx->state == 0x12)) {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, sHeartPulse[0][0], sHeartPulse[0][1], sHeartPulse[0][2],
+                            pauseCtx->alpha);
+        } else {
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, sHeartR, sHeartG, sHeartB, sHeartA);
+        }
+
+        gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 255);
+        gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[QUEST_SLOT_HEART_PIECE * 4], 4, 0);
+
+        POLY_OPA_DISP = KaleidoScope_QuadTextureIA8(
+            POLY_OPA_DISP,
+            gItemIcons[0x79 + (((gSaveContext.inventory.questItems & 0xF0000000) & 0xF0000000) >> 0x1C)], 48, 48, 0);
+    }
+
+    // Contador de Skulltulas Douradas (digitos do jogo; vermelho ao chegar em 100)
+    if (CHECK_QUEST_ITEM(QUEST_SKULL_TOKEN)) {
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPSetCombineLERP(POLY_OPA_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0,
+                          PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0);
+        gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 0);
+
+        digits[0] = digits[1] = 0;
+        digits[2] = gSaveContext.inventory.gsTokens;
+
+        while (digits[2] >= 100) {
+            digits[0]++;
+            digits[2] -= 100;
+        }
+
+        while (digits[2] >= 10) {
+            digits[1]++;
+            digits[2] -= 10;
+        }
+
+        gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[164], 24, 0);
+
+        for (row = 0, i = 0; row < 2; row++) {
+            if (row == 0) {
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 0, 0, 0, pauseCtx->alpha);
+            } else if (gSaveContext.inventory.gsTokens == 100) {
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 200, 50, 50, pauseCtx->alpha);
+            } else {
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+            }
+
+            shown = 0;
+            for (slot = 0; slot < 3; slot++, i += 4) {
+                if ((slot >= 2) || (digits[slot] != 0) || (shown != 0)) {
+                    gDPLoadTextureBlock(POLY_OPA_DISP++, digitTextures[digits[slot]], G_IM_FMT_I, G_IM_SIZ_8b, 8, 16,
+                                        0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK,
+                                        G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+
+                    gSP1Quadrangle(POLY_OPA_DISP++, i, i + 2, i + 3, i + 1, 0);
+
+                    shown = 1;
+                }
+            }
+        }
+    }
+
+    CLOSE_DISPS(gfxCtx);
+}
+
 void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
 
     static s16 D_8082A070[][4] = {
@@ -80,6 +476,12 @@ void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
     s16 pad2;
     s16 phi_s0_2;
     s16 sp208[3];
+
+    // Menu em abas: a aba Colecao usa o layout novo (sem as musicas)
+    if (KaleidoScope_IsTabbedQuestPage(pauseCtx)) {
+        KaleidoScope_DrawQuestStatusTabbed(play, gfxCtx);
+        return;
+    }
 
     OPEN_DISPS(gfxCtx);
 
