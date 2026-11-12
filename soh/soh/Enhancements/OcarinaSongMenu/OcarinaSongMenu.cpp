@@ -16,6 +16,8 @@ extern "C" {
 #include "functions.h"
 extern OcarinaNote sOcarinaSongNotes[OCARINA_SONG_MAX][20];
 extern PlayState* gPlayState;
+// Definida em code_800EC960.c mas não declarada nos headers (marcada como "Unused" no jogo)
+void AudioOcarina_EnableInput(u8 inputEnabled);
 // Acessores adicionados em code_800EC960.c
 u8 AudioOcarina_IsActive(void);
 u8 AudioOcarina_IsInputEnabled(void);
