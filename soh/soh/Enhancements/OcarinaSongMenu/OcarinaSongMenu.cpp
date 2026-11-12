@@ -6,10 +6,12 @@
 #include <imgui.h>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <vector>
 
 #include "OcarinaSongMenu.h"
 #include "soh/OTRGlobals.h"
+#include "textures/parameter_static/parameter_static.h"
 
 extern "C" {
 #include "z64.h"
@@ -326,12 +328,52 @@ void DrawSongIcon(ImDrawList* dl, ImVec2 c, float rad, int idx, ImU32 col) {
     }
 }
 
-// Nota da pauta: usa a textura do jogo (gSongNoteTex) tingida; se não existir, desenha um bloquinho
-void DrawNoteBlock(ImDrawList* dl, ImVec2 c, BtnNote n) {
-    ImU32 tint = (n == BN_A) ? IM_COL32(90, 130, 255, 255) : IM_COL32(255, 215, 60, 255);
+// ---------------------------------------------------------------------------
+// Texturas do jogo (parameter_static) registradas no ImGui uma única vez
+// ---------------------------------------------------------------------------
+// Mesma ordem do enum BtnNote: A, C-baixo, C-direita, C-esquerda, C-cima
+const char* const kBtnTexNames[5] = { "OSM_BtnA", "OSM_BtnCDown", "OSM_BtnCRight", "OSM_BtnCLeft", "OSM_BtnCUp" };
+const char* const kClefTexName = "OSM_TrebleClef";
+bool sTexturesRegistered = false;
 
-    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
+std::shared_ptr<Fast::Fast3dGui> GetFastGui() {
+    return std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
+}
+
+void EnsureTexturesRegistered() {
+    if (sTexturesRegistered) {
+        return;
+    }
+    auto gui = GetFastGui();
+    if (gui == nullptr) {
+        return;
+    }
+    sTexturesRegistered = true;
+    const char* paths[5] = { gOcarinaBtnIconATex, gOcarinaBtnIconCDownTex, gOcarinaBtnIconCRightTex,
+                             gOcarinaBtnIconCLeftTex, gOcarinaBtnIconCUpTex };
+    for (int i = 0; i < 5; i++) {
+        gui->LoadGuiTexture(kBtnTexNames[i], paths[i], "", ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+    }
+    gui->LoadGuiTexture(kClefTexName, gOcarinaTrebleClefTex, "", ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+}
+
+// Nota da pauta: botão do jogo (mesmas texturas da Quest Status) tingido como no jogo.
+// Se não existir, tenta gSongNoteTex; se também não existir, desenha um bloquinho.
+void DrawNoteBlock(ImDrawList* dl, ImVec2 c, BtnNote n) {
+    // Cores padrão do jogo: A azul, botões C amarelos
+    ImU32 tint = (n == BN_A) ? IM_COL32(80, 150, 255, 255) : IM_COL32(255, 255, 50, 255);
+
+    auto gui = GetFastGui();
     if (gui != nullptr) {
+        if ((int)n >= 0 && (int)n < 5) {
+            auto btnTex = gui->GetTextureByName(kBtnTexNames[(int)n]);
+            if (btnTex) {
+                const float half = 17.0f;
+                dl->AddImage(btnTex, ImVec2(c.x - half, c.y - half), ImVec2(c.x + half, c.y + half), ImVec2(0, 0),
+                             ImVec2(1, 1), tint);
+                return;
+            }
+        }
         auto tex = gui->GetTextureByName("gSongNoteTex");
         if (tex) {
             ImVec2 sz = gui->GetTextureSize("gSongNoteTex");
@@ -352,6 +394,30 @@ void DrawNoteBlock(ImDrawList* dl, ImVec2 c, BtnNote n) {
     dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), fg, labels[n]);
 }
 
+// Clave de sol no início da pauta (textura do jogo); sem textura, não desenha nada
+void DrawClef(ImDrawList* dl, float left, float staffTop, float gap) {
+    auto gui = GetFastGui();
+    if (gui == nullptr) {
+        return;
+    }
+    auto clef = gui->GetTextureByName(kClefTexName);
+    if (!clef) {
+        return;
+    }
+    ImVec2 sz = gui->GetTextureSize(kClefTexName);
+    float ch = gap * 6.0f;
+    float cw = (sz.x > 0.0f && sz.y > 0.0f) ? ch * sz.x / sz.y : ch * 0.5f;
+    const float maxW = 56.0f;
+    if (cw > maxW) {
+        ch *= maxW / cw;
+        cw = maxW;
+    }
+    float ccx = left + 32.0f;
+    float ccy = staffTop + gap * 2.0f;
+    dl->AddImage(clef, ImVec2(ccx - cw * 0.5f, ccy - ch * 0.5f), ImVec2(ccx + cw * 0.5f, ccy + ch * 0.5f),
+                 ImVec2(0, 0), ImVec2(1, 1), IM_COL32(70, 48, 28, 255));
+}
+
 // Dica discreta no rodapé enquanto a Ocarina está em uso e o menu está fechado
 void DrawOpenHint() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -369,6 +435,7 @@ void DrawOpenHint() {
 }
 
 void DrawMenu() {
+    EnsureTexturesRegistered();
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetForegroundDrawList();
@@ -385,7 +452,7 @@ void DrawMenu() {
         int k = top ? i : i - topCount;
         int cnt = top ? topCount : botCount;
         float t = (cnt > 1) ? (float)k / (float)(cnt - 1) : 0.5f;
-        float radX = W * (top ? 0.30f : 0.24f);
+        float radX = W * (top ? 0.26f : 0.21f);
         float radY = H * (top ? 0.17f : 0.10f);
         ImVec2 c(cx + (t - 0.5f) * 2.0f * radX, vp->Pos.y + H * (top ? 0.30f : 0.42f) - sinf(3.14159f * t) * radY);
 
@@ -409,8 +476,8 @@ void DrawMenu() {
     // ---- Pergaminho ----
     const SongInfo& s = kSongs[sSel];
     bool learned = IsSongLearned(s);
-    ImVec2 pMin(vp->Pos.x + W * 0.12f, vp->Pos.y + H * 0.58f);
-    ImVec2 pMax(vp->Pos.x + W * 0.88f, vp->Pos.y + H * 0.86f);
+    ImVec2 pMin(vp->Pos.x + W * 0.20f, vp->Pos.y + H * 0.58f);
+    ImVec2 pMax(vp->Pos.x + W * 0.80f, vp->Pos.y + H * 0.86f);
     dl->AddRectFilled(pMin, pMax, IM_COL32(224, 202, 152, 250), 10.0f);
     dl->AddRect(pMin, pMax, IM_COL32(150, 108, 58, 255), 10.0f, 0, 4.0f);
 
@@ -427,6 +494,7 @@ void DrawMenu() {
             dl->AddLine(ImVec2(left, staffTop + (float)l * gap), ImVec2(right, staffTop + (float)l * gap),
                         IM_COL32(70, 48, 28, 255), 1.5f);
         }
+        DrawClef(dl, left, staffTop, gap);
         // Mais agudo = mais alto. Ordem de altura: A < v < > < < < ^
         std::vector<BtnNote> notes = GetSongButtons(s.songId);
         float step = fminf(46.0f, (right - left - 90.0f) / fmaxf(1.0f, (float)notes.size()));
@@ -495,6 +563,12 @@ void OcarinaSongMenuWindow::DrawElement() {
 #endif
 
     if (!ocarinaActive) {
+        CloseMenu();
+        return;
+    }
+
+    // ESC abre o menu do Ship of Harkinian: fecha o menu de músicas para não ficar por cima dele
+    if (sOpen && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         CloseMenu();
         return;
     }
