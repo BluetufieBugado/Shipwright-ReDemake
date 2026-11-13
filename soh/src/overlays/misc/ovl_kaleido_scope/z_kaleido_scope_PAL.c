@@ -28,6 +28,7 @@
 #include "soh/Enhancements/kaleido.h"
 #include <soh_assets.h>
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "z_kaleido_map_sidebar_tex.h"
 
 static void* sEquipmentFRATexs[] = {
     gPauseEquipment00FRATex, gPauseEquipment01Tex, gPauseEquipment02Tex, gPauseEquipment03Tex, gPauseEquipment04Tex,
@@ -1494,6 +1495,18 @@ static bool KaleidoScope_HidePageArrowIcons(PauseContext* pauseCtx) {
            KaleidoScope_IsTabbedQuestPage(pauseCtx);
 }
 
+// ---- Aba Mapa em modo abas: mapa deslocado para a direita, sidebar (Salvar/Carregar/Config.) a esquerda ----
+// Se o mapa andar para o lado errado, inverta o sinal; se ele se afastar/aproximar da camera, o eixo esta errado.
+#define MAP_PAGE_SHIFT_X (-64.0f)
+
+static bool KaleidoScope_IsTabbedMapPage(PauseContext* pauseCtx) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_MAP;
+}
+
+static f32 KaleidoScope_GetMapPageShiftX(PauseContext* pauseCtx) {
+    return KaleidoScope_IsTabbedMapPage(pauseCtx) ? MAP_PAGE_SHIFT_X : 0.0f;
+}
+
 void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
     static Color_RGB8 D_8082ACF4[12] = {
         { 0, 0, 0 }, { 0, 0, 0 },     { 0, 0, 0 },    { 0, 0, 0 }, { 255, 255, 0 }, { 0, 0, 0 },
@@ -1797,7 +1810,8 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
                 break;
 
             case PAUSE_MAP:
-                Matrix_Translate((f32)WREG(3) / 100.0f, (f32)WREG(2) / 100.0f, 0.0f, MTXMODE_NEW);
+                Matrix_Translate((f32)WREG(3) / 100.0f, (f32)WREG(2) / 100.0f,
+                                 KaleidoScope_GetMapPageShiftX(pauseCtx), MTXMODE_NEW);
                 Matrix_Scale(0.78f, 0.78f, 0.78f, MTXMODE_APPLY);
                 Matrix_RotateZ(-pauseCtx->unk_1FC / 100.0f, MTXMODE_APPLY);
                 Matrix_RotateY(-1.57f, MTXMODE_APPLY);
@@ -5578,6 +5592,71 @@ static void KaleidoScope_DrawQuestDetailPanel(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---- Sidebar da aba Mapa ----
+#define MAP_SIDEBAR_COUNT 3
+#define MAP_SIDEBAR_X 16
+#define MAP_SIDEBAR_W 104
+#define MAP_SIDEBAR_BTN_X 24
+#define MAP_SIDEBAR_BTN_W 88
+#define MAP_SIDEBAR_BTN_H 28
+#define MAP_SIDEBAR_BTN_Y0 64
+#define MAP_SIDEBAR_BTN_STEP 38
+// Provisorio: destaca o primeiro botao so para visualizar o estilo. Trocar por foco/input real (proxima etapa).
+#define MAP_SIDEBAR_PREVIEW_HIGHLIGHT 1
+
+static void KaleidoScope_DrawMapSidebar(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
+    u8* texs[MAP_SIDEBAR_COUNT] = { sSidebarTexSave, sSidebarTexLoad, sSidebarTexSettings };
+    s32 texW[MAP_SIDEBAR_COUNT] = { SIDEBAR_TEX_SAVE_W, SIDEBAR_TEX_LOAD_W, SIDEBAR_TEX_SETTINGS_W };
+    s32 selected = MAP_SIDEBAR_PREVIEW_HIGHLIGHT ? 0 : -1;
+    s32 i;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    KaleidoScope_SetupFillState(play);
+
+    // Painel escuro da esquerda
+    KaleidoScope_TabBarFill(play, MAP_SIDEBAR_X, TAB_BAR_H + 10, MAP_SIDEBAR_X + MAP_SIDEBAR_W, SCREEN_HEIGHT - 16, 16,
+                            12, 10, (u8)(alpha * 200 / 255));
+
+    for (i = 0; i < MAP_SIDEBAR_COUNT; i++) {
+        s32 x0 = MAP_SIDEBAR_BTN_X;
+        s32 y0 = MAP_SIDEBAR_BTN_Y0 + i * MAP_SIDEBAR_BTN_STEP;
+        s32 x1 = x0 + MAP_SIDEBAR_BTN_W;
+        s32 y1 = y0 + MAP_SIDEBAR_BTN_H;
+
+        if (i == selected) {
+            KaleidoScope_TabBarFill(play, x0, y0, x1, y1, 92, 68, 40, alpha);
+            KaleidoScope_TabBarFill(play, x0, y0, x0 + 3, y1, 236, 200, 116, alpha); // barra dourada
+        } else {
+            KaleidoScope_TabBarFill(play, x0, y0, x1, y1, 46, 34, 24, alpha);
+        }
+        // Borda de 1 unidade (topo, base e direita)
+        KaleidoScope_TabBarFill(play, x0, y0, x1, y0 + 1, 120, 92, 52, alpha);
+        KaleidoScope_TabBarFill(play, x0, y1 - 1, x1, y1, 120, 92, 52, alpha);
+        KaleidoScope_TabBarFill(play, x1 - 1, y0, x1, y1, 120, 92, 52, alpha);
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+
+    // Rotulos (texturas IA8 coloridas pela cor primaria, como na barra de abas)
+    gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
+                      TEXEL0, 0, PRIMITIVE, 0);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+
+    for (i = 0; i < MAP_SIDEBAR_COUNT; i++) {
+        s32 x = MAP_SIDEBAR_BTN_X + 10;
+        s32 y = MAP_SIDEBAR_BTN_Y0 + i * MAP_SIDEBAR_BTN_STEP + (MAP_SIDEBAR_BTN_H - TAB_TEX_H / 4) / 2;
+        if (i == selected) {
+            KaleidoScope_TabBarText(play, texs[i], texW[i], x, y, 255, 244, 214, alpha);
+        } else {
+            KaleidoScope_TabBarText(play, texs[i], texW[i], x, y, 190, 176, 146, alpha);
+        }
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void KaleidoScope_Draw(PlayState* play) {
     Input* input = &play->state.input[0];
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -5651,6 +5730,9 @@ void KaleidoScope_Draw(PlayState* play) {
                 // Pagina Colecao: mesmo fundo marrom, com painel preto a esquerda e o hexagono dos medalhoes
                 KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha, false);
                 KaleidoScope_DrawQuestFrames(play, (u8)bgAlpha);
+            } else if (KaleidoScope_IsTabbedMapPage(pauseCtx)) {
+                // Pagina Mapa: mesmo fundo marrom (a sidebar e desenhada depois das paginas)
+                KaleidoScope_DrawItemPageBackground(play, (u8)bgAlpha, false);
             }
         }
 
@@ -5689,6 +5771,11 @@ void KaleidoScope_Draw(PlayState* play) {
         // Painel de detalhes da aba Colecao (menu aberto)
         if (tabbedMenu && pauseCtx->state == 6 && KaleidoScope_IsTabbedQuestPage(pauseCtx)) {
             KaleidoScope_DrawQuestDetailPanel(play);
+        }
+
+        // Sidebar da aba Mapa (menu aberto)
+        if (tabbedMenu && pauseCtx->state == 6 && KaleidoScope_IsTabbedMapPage(pauseCtx)) {
+            KaleidoScope_DrawMapSidebar(play);
         }
 
         // Nome do equipamento dentro do oval (pagina de equipamento com o menu aberto)
