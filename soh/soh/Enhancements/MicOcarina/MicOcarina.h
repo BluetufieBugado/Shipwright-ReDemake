@@ -17,6 +17,10 @@ int MicOcarina_GetNote(void);
 // Última frequência detectada em Hz (0 se nenhuma). Útil para calibrar.
 float MicOcarina_GetDebugHz(void);
 
+// Intensidade do som captado: 0 = silêncio (abaixo do limiar de sensibilidade), 0.25..1 = som presente.
+// Usado pelo indicador visual; vale 0 sempre que o microfone está fechado.
+float MicOcarina_GetLevel(void);
+
 // Encerra tudo (também é registrado via atexit).
 void MicOcarina_Stop(void);
 

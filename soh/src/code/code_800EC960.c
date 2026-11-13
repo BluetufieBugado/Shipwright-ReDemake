@@ -1910,6 +1910,9 @@ void AudioOcarina_PlayControllerInput(u8 unused) {
             sCurOcarinaButtonIndex = OCARINA_BTN_C_UP;
         }
 
+        // SoH: true when the current note came from the microphone (used to mute the in-game ocarina sound)
+        bool micNoteActive = false;
+
         // SoH: Microphone ocarina (hum/sing/play a real instrument)
         if (CVarGetInteger(CVAR_SETTING("CustomOcarina.Microphone"), 0)) {
             MicOcarina_Poll(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicOctave"), 0),
@@ -1949,6 +1952,9 @@ void AudioOcarina_PlayControllerInput(u8 unused) {
                         break;
                     default:
                         break;
+                }
+                if (sCurOcarinaPitch != OCARINA_PITCH_NONE) {
+                    micNoteActive = true;
                 }
             }
         }
@@ -2003,8 +2009,11 @@ void AudioOcarina_PlayControllerInput(u8 unused) {
             Audio_QueueCmdS8(0x6 << 24 | SEQ_PLAYER_SFX << 16 | 0xD07, sOcarinaInstrumentId - 1);
             // Sets pitch to io port 5
             Audio_QueueCmdS8(0x6 << 24 | SEQ_PLAYER_SFX << 16 | 0xD05, sCurOcarinaPitch);
-            Audio_PlaySfxGeneral(NA_SE_OC_OCARINA, &gSfxDefaultPos, 4, &sCurOcarinaBendFreq, &sRelativeOcarinaVolume,
-                                 &gSfxDefaultReverb);
+            // SoH: with "Mute In-Game Ocarina" the notes played on the real instrument are not echoed by the game
+            if (!(micNoteActive && CVarGetInteger(CVAR_SETTING("CustomOcarina.MicMute"), 0))) {
+                Audio_PlaySfxGeneral(NA_SE_OC_OCARINA, &gSfxDefaultPos, 4, &sCurOcarinaBendFreq,
+                                     &sRelativeOcarinaVolume, &gSfxDefaultReverb);
+            }
         } else if ((sPrevOcarinaPitch != OCARINA_PITCH_NONE) && (sCurOcarinaPitch == OCARINA_PITCH_NONE)) {
             // Stops ocarina sound when transitioning from playing to not playing a note
             Audio_StopSfxById(NA_SE_OC_OCARINA);

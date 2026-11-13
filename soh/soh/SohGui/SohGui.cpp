@@ -44,6 +44,7 @@
 #include "soh/Enhancements/randomizer/Plandomizer.h"
 #include "soh/SohGui/SohModals.h"
 #include "soh/Enhancements/OcarinaSongMenu/OcarinaSongMenu.h"
+#include "soh/Enhancements/MicOcarina/MicOcarinaOverlay.h"
 
 namespace SohGui {
 
@@ -79,6 +80,21 @@ std::string GetWindowButtonText(const char* text, bool menuOpen) {
 
 // MARK: - Delegates
 
+// Always-visible window with no frame of its own: it only draws the microphone ocarina indicator on the screen.
+class MicOcarinaOverlayWindow final : public Ship::GuiWindow {
+  public:
+    using Ship::GuiWindow::GuiWindow;
+    void InitElement() override {
+    }
+    void UpdateElement() override {
+    }
+    void DrawElement() override {
+        if (CVarGetInteger(CVAR_SETTING("CustomOcarina.MicVisual"), 0)) {
+            MicOcarinaOverlay_Draw();
+        }
+    }
+};
+
 std::shared_ptr<Ship::GuiWindow> mConsoleWindow;
 std::shared_ptr<SohStatsWindow> mStatsWindow;
 std::shared_ptr<Ship::GuiWindow> mGfxDebuggerWindow;
@@ -113,6 +129,7 @@ std::shared_ptr<Notification::Window> mNotificationWindow;
 std::shared_ptr<TimeDisplayWindow> mTimeDisplayWindow;
 std::shared_ptr<AnchorRoomWindow> mAnchorRoomWindow;
 std::shared_ptr<OcarinaSongMenuWindow> mOcarinaSongMenuWindow;
+std::shared_ptr<MicOcarinaOverlayWindow> mMicOcarinaOverlayWindow;
 
 UIWidgets::Colors GetMenuThemeColor() {
     return mSohMenu->GetMenuThemeColor();
@@ -156,6 +173,7 @@ std::vector<std::shared_ptr<Ship::GuiWindow>> GetAllGuiWindows() {
         mTimeDisplayWindow,
         mAnchorRoomWindow,
         mOcarinaSongMenuWindow,
+        mMicOcarinaOverlayWindow,
         // Registered outside SohGui.
         gui->GetGuiWindow("Configure Controller"),
         gui->GetGuiWindow("Console"),
@@ -277,6 +295,10 @@ void SetupGuiElements() {
         std::make_shared<OcarinaSongMenuWindow>(CVAR_WINDOW("OcarinaSongMenu"), "Ocarina Song Menu");
     gui->AddGuiWindow(mOcarinaSongMenuWindow);
     mOcarinaSongMenuWindow->Show();
+    mMicOcarinaOverlayWindow =
+        std::make_shared<MicOcarinaOverlayWindow>(CVAR_WINDOW("MicOcarinaOverlay"), "Microphone Ocarina Indicator");
+    gui->AddGuiWindow(mMicOcarinaOverlayWindow);
+    mMicOcarinaOverlayWindow->Show();
 }
 
 void Destroy() {
@@ -315,6 +337,7 @@ void Destroy() {
     mTimeDisplayWindow = nullptr;
     mAnchorRoomWindow = nullptr;
     mOcarinaSongMenuWindow = nullptr;
+    mMicOcarinaOverlayWindow = nullptr;
 }
 
 void RegisterPopup(std::string title, std::string message, std::string button1, std::string button2,

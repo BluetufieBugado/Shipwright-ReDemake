@@ -1357,6 +1357,18 @@ void SohInputEditorWindow::DrawOcarinaControlPanel() {
                       IntSliderOptions().Color(THEME_COLOR).Min(-3).Max(3).DefaultValue(0).ShowButtons(true));
         CVarSliderInt("Mic Tuning (cents): %d", CVAR_SETTING("CustomOcarina.MicTuning"),
                       IntSliderOptions().Color(THEME_COLOR).Min(-50).Max(50).DefaultValue(0).ShowButtons(true));
+        CVarCheckbox("Mute In-Game Ocarina While Playing", CVAR_SETTING("CustomOcarina.MicMute"),
+                     CheckboxOptions()
+                         .Color(THEME_COLOR)
+                         .Tooltip("The in-game ocarina stays silent while you play on your real instrument or "
+                                  "hum, like the remake. Only the notes played with the microphone are muted; "
+                                  "the game still plays the song once you play the melody correctly."));
+        CVarCheckbox("Show Microphone Indicator", CVAR_SETTING("CustomOcarina.MicVisual"),
+                     CheckboxOptions()
+                         .Color(THEME_COLOR)
+                         .Tooltip("Shows streaks of light across the screen while the game is picking up sound "
+                                  "from your microphone. Blue = A, yellow = C buttons, gray = sound heard but "
+                                  "not a valid ocarina note."));
 
         // Live preview so the user can calibrate without opening the ocarina in-game
         MicOcarina_Poll(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicOctave"), 0),

@@ -44,6 +44,7 @@ std::atomic<float> gRmsThreshold{ 0.0126f };
 std::atomic<float> gTuningCents{ 0.0f };
 std::atomic<int> gOctaveShift{ 0 };
 std::atomic<float> gDebugHz{ 0.0f };
+std::atomic<float> gLevel{ 0.0f }; // 0 = silêncio; 0.25..1 = som acima do limiar (indicador visual)
 
 void SDLCALL CaptureCb(void*, Uint8* stream, int len) {
     const float* in = reinterpret_cast<const float*>(stream);
@@ -171,6 +172,10 @@ void Worker() {
             rms += v * v;
         }
         rms = std::sqrt(rms / kWindow);
+        {
+            const float thr = gRmsThreshold.load();
+            gLevel.store(rms > thr ? std::min(1.0f, std::max(0.25f, rms / (thr * 4.0f))) : 0.0f);
+        }
 
         int now = -1;
         float hz = 0.0f;
@@ -201,6 +206,7 @@ void Worker() {
     }
 
     gNote.store(-1);
+    gLevel.store(0.0f);
     if (gDev) {
         SDL_CloseAudioDevice(gDev);
         gDev = 0;
@@ -256,6 +262,10 @@ extern "C" float MicOcarina_GetDebugHz(void) {
     return gDebugHz.load();
 }
 
+extern "C" float MicOcarina_GetLevel(void) {
+    return gLevel.load();
+}
+
 extern "C" void MicOcarina_Stop(void) {
     gLastPoll.store(0);
     gRun = false;
@@ -268,4 +278,5 @@ extern "C" void MicOcarina_Stop(void) {
     }
     gNote.store(-1);
     gDebugHz.store(0.0f);
+    gLevel.store(0.0f);
 }
