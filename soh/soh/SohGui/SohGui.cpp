@@ -88,6 +88,15 @@ class MicOcarinaOverlayWindow final : public Ship::GuiWindow {
     }
     void UpdateElement() override {
     }
+    // No window frame: same pattern as OcarinaSongMenuWindow / InputViewer. Skips ImGui::Begin/End, so there is no
+    // title bar, close button or resize grip; DrawElement draws straight onto the foreground draw list.
+    void Draw() override {
+        if (!IsVisible()) {
+            return;
+        }
+        DrawElement();
+        SyncVisibilityConsoleVariable();
+    }
     void DrawElement() override {
         if (CVarGetInteger(CVAR_SETTING("CustomOcarina.MicVisual"), 0)) {
             MicOcarinaOverlay_Draw();
