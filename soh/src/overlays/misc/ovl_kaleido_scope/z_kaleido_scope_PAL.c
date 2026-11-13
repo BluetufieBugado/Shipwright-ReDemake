@@ -1446,7 +1446,7 @@ extern s16 KaleidoScope_GetItemSlotFrameBottom(s16 slot);
 // Layout da aba Equipamento no menu em abas (definido em z_kaleido_equipment.c)
 extern bool KaleidoScope_IsTabbedEquipPage(PauseContext* pauseCtx);
 extern bool KaleidoScope_IsTabbedQuestPage(PauseContext* pauseCtx);
-extern bool KaleidoScope_GetQuestSlotScreen(s16 slot, s16* x, s16* y, s16* ring);
+extern bool KaleidoScope_GetQuestSlotCenterQ(s16 slot, s32* xq, s32* yq, s16* ring);
 extern bool KaleidoScope_IsQuestSlotOwned(s16 slot);
 extern void KaleidoScope_SetQuestTabbedVertices(PauseContext* pauseCtx);
 extern void KaleidoScope_GetEquipSlotCenter(s16 slot, s16* x, s16* y);
@@ -3743,6 +3743,26 @@ static void KaleidoScope_GetOpenFinalView(PauseContext* pauseCtx, f32* outEyeX, 
 }
 
 
+// Menu em abas: a aba Colecao esta na tela (menu aberto/fechando) ou vai estar quando a abertura terminar? Usada pelo
+// z_parameter.c para esconder os botoes C so nessa aba. Durante a abertura o pageIndex ainda nao e o da pagina final.
+bool KaleidoScope_IsQuestTabShown(PauseContext* pauseCtx) {
+    f32 eyeX = pauseCtx->eye.x;
+    f32 eyeZ = pauseCtx->eye.z;
+    u16 page = pauseCtx->pageIndex;
+
+    if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0 || pauseCtx->randoQuestMode) {
+        return false;
+    }
+
+    if (pauseCtx->state == 4 || pauseCtx->state == 5) {
+        KaleidoScope_GetOpenFinalView(pauseCtx, &eyeX, &eyeZ, &page);
+    } else if (pauseCtx->state != 6 && pauseCtx->state != 0x12) {
+        return false;
+    }
+
+    return page == PAUSE_QUEST;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Barra de abas do menu em abas (CVar gEnhancements.TabbedPauseMenu)
 // Os nomes sao texturas IA8 geradas com a fonte Lora (SIL OFL), 4 texels por unidade de tela, altura 40.
@@ -5250,8 +5270,6 @@ static void KaleidoScope_DrawItemPageBackground(PlayState* play, u8 alpha, bool 
 #define QUEST_NAME_SC 118
 #define QUEST_DESC_SC 90
 #define QUEST_DESC_LINE_H 10
-#define QUEST_HEX_CX 208
-#define QUEST_HEX_CY 122
 
 typedef struct {
     const char* name;
@@ -5277,82 +5295,187 @@ static const QuestSlotText sQuestSlotTexts[25] = {
     { "Peça de Coração", "Reúna quatro peças para ganhar um novo coração." },
 };
 
-static void KaleidoScope_DrawQuestDisc(PlayState* play, s32 cx, s32 cy, s32 r, u8 cr, u8 cg, u8 cb, u8 a) {
-    s32 dy;
+// Formas suaves: os discos e as pontas do hexagono usam texturas IA8 64x64 com borda anti-serrilhada (4 bits de alfa),
+// geradas uma vez por codigo e esticadas com filtro bilinear; as partes retas sao retangulos com precisao de 1/4 de
+// unidade (~1 pixel). Assim nada fica "em degraus", como nas outras abas.
+#define QUEST_AA_TEX 64
+enum { QUEST_TEX_DISC, QUEST_TEX_TR, QUEST_TEX_TL, QUEST_TEX_BR, QUEST_TEX_BL, QUEST_TEX_COUNT };
 
-    for (dy = -r; dy <= r; dy++) {
-        s32 hw = (s32)sqrtf((f32)(r * r - dy * dy) + 0.5f);
+static u8 sQuestAATex[QUEST_TEX_COUNT][QUEST_AA_TEX * QUEST_AA_TEX];
+static bool sQuestAATexReady = false;
 
-        KaleidoScope_TabBarFill(play, cx - hw, cy + dy, cx + hw + 1, cy + dy + 1, cr, cg, cb, a);
+static void KaleidoScope_QuestInitAATex(void) {
+    s32 x;
+    s32 y;
+    s32 t;
+
+    if (sQuestAATexReady) {
+        return;
     }
-}
 
-// Hexagono com vertices em cima e embaixo (lados verticais), circunraio rh
-static void KaleidoScope_DrawQuestHex(PlayState* play, s32 cx, s32 cy, s32 rh, u8 cr, u8 cg, u8 cb, u8 a) {
-    s32 dy;
+    for (y = 0; y < QUEST_AA_TEX; y++) {
+        for (x = 0; x < QUEST_AA_TEX; x++) {
+            f32 xc = (f32)x + 0.5f;
+            f32 yc = (f32)y + 0.5f;
+            f32 dx = xc - 32.0f;
+            f32 dy = yc - 32.0f;
+            f32 d[QUEST_TEX_COUNT];
 
-    for (dy = -rh; dy <= rh; dy++) {
-        s32 ady = abs(dy);
-        s32 hw = (ady * 2 <= rh) ? (rh * 866 / 1000) : ((rh - ady) * 1732 / 1000);
+            // distancia (em texels) para dentro da forma; >= 0,5 = totalmente coberto
+            d[QUEST_TEX_DISC] = 31.0f - sqrtf(dx * dx + dy * dy);
+            d[QUEST_TEX_TR] = (yc - xc) * 0.70710678f;
+            d[QUEST_TEX_TL] = (yc - (64.0f - xc)) * 0.70710678f;
+            d[QUEST_TEX_BR] = (64.0f - xc - yc) * 0.70710678f;
+            d[QUEST_TEX_BL] = (xc - yc) * 0.70710678f;
 
-        if (hw > 0) {
-            KaleidoScope_TabBarFill(play, cx - hw, cy + dy, cx + hw, cy + dy + 1, cr, cg, cb, a);
+            for (t = 0; t < QUEST_TEX_COUNT; t++) {
+                f32 cov = 0.5f + d[t];
+
+                if (cov < 0.0f) {
+                    cov = 0.0f;
+                }
+                if (cov > 1.0f) {
+                    cov = 1.0f;
+                }
+                sQuestAATex[t][y * QUEST_AA_TEX + x] = (u8)(0xF0 | (s32)(cov * 15.0f + 0.5f));
+            }
         }
     }
+    sQuestAATexReady = true;
+}
+
+static void KaleidoScope_QuestTexBind(PlayState* play, s32 which) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
+                      TEXEL0, 0, PRIMITIVE, 0);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, sQuestAATex[which], G_IM_FMT_IA, G_IM_SIZ_8b, QUEST_AA_TEX, QUEST_AA_TEX, 0,
+                        G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
+                        G_TX_NOLOD);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Retangulo solido (coordenadas em quartos de unidade) amostrando o centro opaco da textura do disco
+static void KaleidoScope_QuestSolidQ(PlayState* play, s32 l, s32 t, s32 r, s32 b, u8 cr, u8 cg, u8 cb, u8 ca) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, cr, cg, cb, ca);
+    gSPWideTextureRectangle(POLY_OPA_DISP++, l, t, r, b, G_TX_RENDERTILE, 32 << 5, 32 << 5, 0, 0);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Textura inteira esticada no retangulo (quartos de unidade)
+static void KaleidoScope_QuestTexRectQ(PlayState* play, s32 l, s32 t, s32 r, s32 b, u8 cr, u8 cg, u8 cb, u8 ca) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, cr, cg, cb, ca);
+    gSPWideTextureRectangle(POLY_OPA_DISP++, l, t, r, b, G_TX_RENDERTILE, 0, 0,
+                            (1 << 10) * (QUEST_AA_TEX * 4) / (r - l), (1 << 10) * (QUEST_AA_TEX * 4) / (b - t));
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Disco de raio rq (quartos de unidade) centrado em (cxq, cyq); a textura deixa 1 texel de folga na borda
+static void KaleidoScope_QuestDiscQ(PlayState* play, s32 cxq, s32 cyq, s32 rq, u8 cr, u8 cg, u8 cb, u8 ca) {
+    s32 half = (rq * 32 + 15) / 31;
+
+    KaleidoScope_QuestTexRectQ(play, cxq - half, cyq - half, cxq + half, cyq + half, cr, cg, cb, ca);
 }
 
 // Fundo da aba Colecao (desenhado atras dos icones): painel preto da esquerda, hexagono, faixa das pedras e
 // molduras redondas de cada slot (a do slot selecionado fica dourada e mais clara, no lugar do cursor).
 static void KaleidoScope_DrawQuestFrames(PlayState* play, u8 alpha) {
+    // Camadas do hexagono, de baixo para cima: borda dourada, pedra, filete dourado e miolo (circunraio em unidades)
+    static const struct {
+        s16 r;
+        u8 cr, cg, cb;
+    } sHexLayers[4] = { { 78, 132, 102, 58 }, { 76, 92, 70, 46 }, { 64, 126, 98, 60 }, { 63, 82, 62, 40 } };
     PauseContext* pauseCtx = &play->pauseCtx;
     s32 l = OTRGetRectDimensionFromLeftEdge(0);
     s16 selected = (pauseCtx->cursorSpecialPos == 0) ? pauseCtx->cursorSlot[PAUSE_QUEST] : -1;
+    s32 hcx;
+    s32 hcy;
+    s32 lxq;
+    s32 rxq;
+    s32 dummyY;
+    s16 ringR;
     s16 slot;
     s32 i;
+    s32 k;
+
+    KaleidoScope_QuestInitAATex();
+    KaleidoScope_GetQuestSlotCenterQ(19, &hcx, &hcy, &ringR);
 
     OPEN_DISPS(play->state.gfxCtx);
 
     KaleidoScope_SetupFillState(play);
 
-    // Painel esquerdo preto, com transicao suave para o marrom
-    for (i = 0; i < 6; i++) {
-        u8 a = (u8)(alpha * ((6 - i) * 36) / 255);
-        KaleidoScope_TabBarFill(play, QUEST_PANEL_EDGE + i * 3, 0, QUEST_PANEL_EDGE + i * 3 + 3, SCREEN_HEIGHT, 6, 6, 9,
-                                a);
+    // Painel esquerdo preto, com transicao suave (18 faixas de 1 unidade) para o marrom
+    for (i = 0; i < 18; i++) {
+        u8 a = (u8)(alpha * (18 - i) * (18 - i) / 324);
+        KaleidoScope_TabBarFill(play, QUEST_PANEL_EDGE + i, 0, QUEST_PANEL_EDGE + i + 1, SCREEN_HEIGHT, 6, 6, 9, a);
     }
     KaleidoScope_TabBarFill(play, l, 0, QUEST_PANEL_EDGE, SCREEN_HEIGHT, 6, 6, 9, alpha);
 
-    // Hexagono de bronze: sombra, borda dourada, pedra, filete e miolo
-    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 80, 26, 18, 12, alpha);
-    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 78, 132, 102, 58, alpha);
-    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 76, 92, 70, 46, alpha);
-    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 64, 126, 98, 60, alpha);
-    KaleidoScope_DrawQuestHex(play, QUEST_HEX_CX, QUEST_HEX_CY, 63, 82, 62, 40, alpha);
+    // Hexagono: parte reta do meio (retangulos solidos)...
+    KaleidoScope_QuestTexBind(play, QUEST_TEX_DISC);
+    for (k = 0; k < 4; k++) {
+        s32 rq = sHexLayers[k].r * 4;
+        s32 hq = rq / 2;
+        s32 wq = (rq * 866 + 500) / 1000;
+
+        KaleidoScope_QuestSolidQ(play, hcx - wq, hcy - hq, hcx + wq, hcy + hq, sHexLayers[k].cr, sHexLayers[k].cg,
+                                 sHexLayers[k].cb, alpha);
+    }
+
+    // ...e as quatro pontas inclinadas (texturas triangulares anti-serrilhadas)
+    for (i = 0; i < 4; i++) {
+        KaleidoScope_QuestTexBind(play, QUEST_TEX_TR + i);
+        for (k = 0; k < 4; k++) {
+            s32 rq = sHexLayers[k].r * 4;
+            s32 hq = rq / 2;
+            s32 wq = (rq * 866 + 500) / 1000;
+            s32 x0 = (i == 0 || i == 2) ? hcx : hcx - wq; // i: 0=TR 1=TL 2=BR 3=BL
+            s32 y0 = (i <= 1) ? hcy - rq : hcy + hq;
+
+            KaleidoScope_QuestTexRectQ(play, x0, y0, x0 + wq, y0 + (rq - hq), sHexLayers[k].cr, sHexLayers[k].cg,
+                                       sHexLayers[k].cb, alpha);
+        }
+    }
 
     // Faixa central das pedras espirituais
-    KaleidoScope_TabBarFill(play, 162, 106, 254, 138, 150, 118, 66, alpha);
-    KaleidoScope_TabBarFill(play, 163, 107, 253, 137, 60, 44, 28, alpha);
+    KaleidoScope_GetQuestSlotCenterQ(18, &lxq, &dummyY, &ringR);
+    KaleidoScope_GetQuestSlotCenterQ(20, &rxq, &dummyY, &ringR);
+    KaleidoScope_SetupFillState(play);
+    KaleidoScope_TabBarFill(play, lxq / 4 - 18, hcy / 4 - 16, rxq / 4 + 18, hcy / 4 + 16, 150, 118, 66, alpha);
+    KaleidoScope_TabBarFill(play, lxq / 4 - 17, hcy / 4 - 15, rxq / 4 + 17, hcy / 4 + 15, 60, 44, 28, alpha);
 
     // Molduras redondas
+    KaleidoScope_QuestTexBind(play, QUEST_TEX_DISC);
     for (slot = 0; slot < 25; slot++) {
-        s16 sx;
-        s16 sy;
+        s32 sxq;
+        s32 syq;
         s16 ring;
         bool owned;
 
-        if (!KaleidoScope_GetQuestSlotScreen(slot, &sx, &sy, &ring)) {
+        if (!KaleidoScope_GetQuestSlotCenterQ(slot, &sxq, &syq, &ring)) {
             continue;
         }
         owned = KaleidoScope_IsQuestSlotOwned(slot);
 
         if (slot == selected) {
-            KaleidoScope_DrawQuestDisc(play, sx, sy, ring + 4, 255, 226, 140, (u8)(alpha * 90 / 255));
-            KaleidoScope_DrawQuestDisc(play, sx, sy, ring + 2, 255, 232, 150, alpha);
+            KaleidoScope_QuestDiscQ(play, sxq, syq, ring * 4 + 16, 255, 226, 140, (u8)(alpha * 90 / 255));
+            KaleidoScope_QuestDiscQ(play, sxq, syq, ring * 4 + 8, 255, 232, 150, alpha);
         } else {
-            KaleidoScope_DrawQuestDisc(play, sx, sy, ring + 2, 22, 15, 10, alpha);
+            KaleidoScope_QuestDiscQ(play, sxq, syq, ring * 4 + 8, 22, 15, 10, alpha);
         }
-        KaleidoScope_DrawQuestDisc(play, sx, sy, ring, owned ? 176 : 112, owned ? 138 : 86, owned ? 78 : 54, alpha);
-        KaleidoScope_DrawQuestDisc(play, sx, sy, ring - 2, owned ? 40 : 34, owned ? 29 : 25, owned ? 20 : 18, alpha);
+        KaleidoScope_QuestDiscQ(play, sxq, syq, ring * 4, owned ? 176 : 112, owned ? 138 : 86, owned ? 78 : 54, alpha);
+        KaleidoScope_QuestDiscQ(play, sxq, syq, ring * 4 - 8, owned ? 40 : 34, owned ? 29 : 25, owned ? 20 : 18,
+                                alpha);
     }
     gDPPipeSync(POLY_OPA_DISP++);
 

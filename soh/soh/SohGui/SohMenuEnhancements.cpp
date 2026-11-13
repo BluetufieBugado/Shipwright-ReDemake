@@ -290,9 +290,9 @@ void SohMenu::AddMenuEnhancements() {
             "Selection of warp song in pause menu initiates a warp. Disables song playback."));
     AddWidget(path, "Ocarina Song Menu", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("OcarinaSongMenu"))
-        .Options(CheckboxOptions().Tooltip(
-            "Adds a Songs button at the bottom of the screen that opens a menu with every learned ocarina song, "
-            "its notes on a music staff, and a button to listen to the melody."));
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "While the ocarina is out, press D-Pad Down to open a menu with every ocarina song, its notes on a "
+            "music staff, and a button to listen to the melody."));
 
     path.column = SECTION_COLUMN_2;
     AddWidget(path, "Controls", WIDGET_SEPARATOR_TEXT);

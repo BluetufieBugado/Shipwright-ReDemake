@@ -1,4 +1,4 @@
-// Ocarina por microfone: captura áudio (SDL2), detecta o pitch (YIN) e
+CVarGetInteger(CVAR_OCA_MENU_NAME// Ocarina por microfone: captura áudio (SDL2), detecta o pitch (YIN) e
 // converte em uma das 5 notas do ocarina de Ocarina of Time.
 #include "MicOcarina.h"
 

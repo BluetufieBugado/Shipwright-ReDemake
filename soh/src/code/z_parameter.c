@@ -61,6 +61,14 @@ static bool Interface_HideRupeesForTabbedPause(PlayState* play) {
     return (OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH) - TABBED_PAUSE_RUPEE_TABS_END_X) >=
            TABBED_PAUSE_RUPEE_MIN_ROOM;
 }
+// Menu de pausa em abas, aba Colecao: esconde os botoes C (circulos, setas vazias, icones e municao) so nessa aba, para
+// nao cobrir os itens. A funcao fica em z_kaleido_scope_PAL.c (sabe qual sera a pagina final durante a abertura).
+extern bool KaleidoScope_IsQuestTabShown(PauseContext* pauseCtx);
+
+static bool Interface_HideCButtonsForQuestTab(PlayState* play) {
+    return KaleidoScope_IsQuestTabShown(&play->pauseCtx);
+}
+
 extern MessageTableEntry* sNesMessageEntryTablePtr;
 extern MessageTableEntry* sGerMessageEntryTablePtr;
 extern MessageTableEntry* sFraMessageEntryTablePtr;
@@ -3847,6 +3855,7 @@ void Interface_DrawActionLabel(GraphicsContext* gfxCtx, void* texture) {
 
 void Interface_DrawItemButtons(PlayState* play) {
     s16 pauseHudOffsetY = Interface_GetTabbedPauseHudOffsetY(play);
+    bool hideCButtons = Interface_HideCButtonsForQuestTab(play);
     static void* cUpLabelTextures[] = { gNaviCUpENGTex, gNaviCUpENGTex, gNaviCUpENGTex, gNaviCUpJPTex };
     static s16 startButtonLeftPos[] = { 132, 130, 130, 132 };
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
@@ -4187,30 +4196,32 @@ void Interface_DrawItemButtons(PlayState* play) {
     OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, gButtonBackgroundTex, BBtn_Size, BBtn_Size, PosX_BtnB, PosY_BtnB,
                                   BBtnScaled, BBtnScaled, BBtn_factor, BBtn_factor);
 
-    // C-Left Button Color & Texture
-    gDPPipeSync(OVERLAY_DISP++);
-    gDPSetPrimColor(OVERLAY_DISP++, 0, 0, cLeftButtonColor.r, cLeftButtonColor.g, cLeftButtonColor.b,
-                    interfaceCtx->cLeftAlpha);
-    gSPWideTextureRectangle(OVERLAY_DISP++, C_Left_BTN_Pos[0] << 2, C_Left_BTN_Pos[1] << 2,
-                            (C_Left_BTN_Pos[0] + R_ITEM_BTN_WIDTH(1)) << 2,
-                            (C_Left_BTN_Pos[1] + R_ITEM_BTN_WIDTH(1)) << 2, G_TX_RENDERTILE, 0, 0,
-                            R_ITEM_BTN_DD(1) << 1, R_ITEM_BTN_DD(1) << 1);
+    if (!hideCButtons) {
+        // C-Left Button Color & Texture
+        gDPPipeSync(OVERLAY_DISP++);
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, cLeftButtonColor.r, cLeftButtonColor.g, cLeftButtonColor.b,
+                        interfaceCtx->cLeftAlpha);
+        gSPWideTextureRectangle(OVERLAY_DISP++, C_Left_BTN_Pos[0] << 2, C_Left_BTN_Pos[1] << 2,
+                                (C_Left_BTN_Pos[0] + R_ITEM_BTN_WIDTH(1)) << 2,
+                                (C_Left_BTN_Pos[1] + R_ITEM_BTN_WIDTH(1)) << 2, G_TX_RENDERTILE, 0, 0,
+                                R_ITEM_BTN_DD(1) << 1, R_ITEM_BTN_DD(1) << 1);
 
-    // C-Down Button Color & Texture
-    gDPSetPrimColor(OVERLAY_DISP++, 0, 0, cDownButtonColor.r, cDownButtonColor.g, cDownButtonColor.b,
-                    interfaceCtx->cDownAlpha);
-    gSPWideTextureRectangle(OVERLAY_DISP++, C_Down_BTN_Pos[0] << 2, C_Down_BTN_Pos[1] << 2,
-                            (C_Down_BTN_Pos[0] + R_ITEM_BTN_WIDTH(2)) << 2,
-                            (C_Down_BTN_Pos[1] + R_ITEM_BTN_WIDTH(2)) << 2, G_TX_RENDERTILE, 0, 0,
-                            R_ITEM_BTN_DD(2) << 1, R_ITEM_BTN_DD(2) << 1);
+        // C-Down Button Color & Texture
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, cDownButtonColor.r, cDownButtonColor.g, cDownButtonColor.b,
+                        interfaceCtx->cDownAlpha);
+        gSPWideTextureRectangle(OVERLAY_DISP++, C_Down_BTN_Pos[0] << 2, C_Down_BTN_Pos[1] << 2,
+                                (C_Down_BTN_Pos[0] + R_ITEM_BTN_WIDTH(2)) << 2,
+                                (C_Down_BTN_Pos[1] + R_ITEM_BTN_WIDTH(2)) << 2, G_TX_RENDERTILE, 0, 0,
+                                R_ITEM_BTN_DD(2) << 1, R_ITEM_BTN_DD(2) << 1);
 
-    // C-Right Button Color & Texture
-    gDPSetPrimColor(OVERLAY_DISP++, 0, 0, cRightButtonColor.r, cRightButtonColor.g, cRightButtonColor.b,
-                    interfaceCtx->cRightAlpha);
-    gSPWideTextureRectangle(OVERLAY_DISP++, C_Right_BTN_Pos[0] << 2, C_Right_BTN_Pos[1] << 2,
-                            (C_Right_BTN_Pos[0] + R_ITEM_BTN_WIDTH(3)) << 2,
-                            (C_Right_BTN_Pos[1] + R_ITEM_BTN_WIDTH(3)) << 2, G_TX_RENDERTILE, 0, 0,
-                            R_ITEM_BTN_DD(3) << 1, R_ITEM_BTN_DD(3) << 1);
+        // C-Right Button Color & Texture
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, cRightButtonColor.r, cRightButtonColor.g, cRightButtonColor.b,
+                        interfaceCtx->cRightAlpha);
+        gSPWideTextureRectangle(OVERLAY_DISP++, C_Right_BTN_Pos[0] << 2, C_Right_BTN_Pos[1] << 2,
+                                (C_Right_BTN_Pos[0] + R_ITEM_BTN_WIDTH(3)) << 2,
+                                (C_Right_BTN_Pos[1] + R_ITEM_BTN_WIDTH(3)) << 2, G_TX_RENDERTILE, 0, 0,
+                                R_ITEM_BTN_DD(3) << 1, R_ITEM_BTN_DD(3) << 1);
+    }
 
     if ((pauseCtx->state < 8) || (pauseCtx->state >= 18)) {
         if ((play->pauseCtx.state != 0) || (play->pauseCtx.debugState != 0)) {
@@ -4296,7 +4307,7 @@ void Interface_DrawItemButtons(PlayState* play) {
     gDPPipeSync(OVERLAY_DISP++);
 
     // Empty C Button Arrows
-    for (temp = 1; temp < 4; temp++) {
+    for (temp = 1; temp < 4 && !hideCButtons; temp++) {
         if (gSaveContext.equips.buttonItems[temp] > 0xF0) {
             s16 X_Margins_CL;
             s16 X_Margins_CR;
@@ -5126,6 +5137,7 @@ const char* digitTextures[] = { gCounterDigit0Tex, gCounterDigit1Tex, gCounterDi
 
 void Interface_Draw(PlayState* play) {
     s16 pauseHudOffsetY = Interface_GetTabbedPauseHudOffsetY(play);
+    bool hideCButtons = Interface_HideCButtonsForQuestTab(play);
     static s16 magicArrowEffectsR[] = { 255, 100, 255 };
     static s16 magicArrowEffectsG[] = { 0, 100, 255 };
     static s16 magicArrowEffectsB[] = { 0, 255, 100 };
@@ -5570,7 +5582,7 @@ void Interface_Draw(PlayState* play) {
         gDPPipeSync(OVERLAY_DISP++);
 
         // C-Left Button Icon & Ammo Count
-        if (gSaveContext.equips.buttonItems[1] < 0xF0) {
+        if (!hideCButtons && gSaveContext.equips.buttonItems[1] < 0xF0) {
             gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, interfaceCtx->cLeftAlpha);
             gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
             Interface_DrawItemIconTexture(play, gItemIcons[gSaveContext.equips.buttonItems[1]], 1);
@@ -5583,7 +5595,7 @@ void Interface_Draw(PlayState* play) {
         gDPPipeSync(OVERLAY_DISP++);
 
         // C-Down Button Icon & Ammo Count
-        if (gSaveContext.equips.buttonItems[2] < 0xF0) {
+        if (!hideCButtons && gSaveContext.equips.buttonItems[2] < 0xF0) {
             gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, interfaceCtx->cDownAlpha);
             gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
             Interface_DrawItemIconTexture(play, gItemIcons[gSaveContext.equips.buttonItems[2]], 2);
@@ -5596,7 +5608,7 @@ void Interface_Draw(PlayState* play) {
         gDPPipeSync(OVERLAY_DISP++);
 
         // C-Right Button Icon & Ammo Count
-        if (gSaveContext.equips.buttonItems[3] < 0xF0) {
+        if (!hideCButtons && gSaveContext.equips.buttonItems[3] < 0xF0) {
             gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, interfaceCtx->cRightAlpha);
             gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
             Interface_DrawItemIconTexture(play, gItemIcons[gSaveContext.equips.buttonItems[3]], 3);

@@ -545,7 +545,7 @@ void OcarinaSongMenuWindow::DrawElement() {
     sPrevStickDir = stickDir;
 
     // ---- Só funciona com a opção ligada, em gameplay e com a Ocarina ativa ----
-    bool enabled = CVarGetInteger(CVAR_OCA_MENU_NAME, 0) != 0;
+    bool enabled = CVarGetInteger(CVAR_OCA_MENU_NAME, 1) != 0; // ligado por padrão
     bool ready = IsGameplayReady();
     bool active = AudioOcarina_IsActive() != 0;
     bool ocarinaActive = enabled && ready && active;

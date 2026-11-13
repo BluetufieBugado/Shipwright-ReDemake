@@ -16,34 +16,36 @@ extern const char* digitTextures[];
 // ---------------------------------------------------------------------------------------------------------------
 #define QUEST_SLOT_COUNT 25
 #define QUEST_SLOT_HEART_PIECE 24
-#define QUEST_PAGE_SCALE_X100 103 // 1 unidade de pagina ~ 1,03 unidades de tela (igual ao EQUIP_PAGE_TO_SCREEN)
 
 typedef struct {
-    s16 x;    // centro do slot, em unidades de tela (320x240)
+    s16 x;    // centro do slot, em unidades da PAGINA (as mesmas dos vertices; x p/ direita, y p/ cima)
     s16 y;    // idem
     s16 icon; // lado do icone, em unidades da pagina (0 = slot que nao existe nesta aba)
     s16 ring; // raio da moldura redonda, em unidades de tela
 } QuestSlotLayout;
 
+// Tela = 160 + x * 1,03 ; 120 - y * 1,03. O layout fica em unidades da pagina para o icone e a moldura cairem exatamente
+// no mesmo ponto (antes eu convertia de tela para pagina truncando e o icone saia ate 1 unidade do lugar).
+
 // Indice = numero do slot do jogo (QUEST_MEDALLION_FOREST = 0 ... heart piece = 24). Slots 6..17 eram as musicas.
 static const QuestSlotLayout sQuestSlotLayout[QUEST_SLOT_COUNT] = {
-    { 262, 91, 28, 19 },  // 0  Medalhao da Floresta (vertice superior direito)
-    { 262, 153, 28, 19 }, // 1  Medalhao do Fogo (inferior direito)
-    { 208, 184, 28, 19 }, // 2  Medalhao da Agua (inferior)
-    { 154, 153, 28, 19 }, // 3  Medalhao do Espirito (inferior esquerdo)
-    { 154, 91, 28, 19 },  // 4  Medalhao da Sombra (superior esquerdo)
-    { 208, 60, 28, 19 },  // 5  Medalhao da Luz (superior)
+    { 99, 28, 28, 19 },   // 0  Medalhao da Floresta (vertice superior direito)
+    { 99, -32, 28, 19 },  // 1  Medalhao do Fogo (inferior direito)
+    { 47, -62, 28, 19 },  // 2  Medalhao da Agua (inferior)
+    { -5, -32, 28, 19 },  // 3  Medalhao do Espirito (inferior esquerdo)
+    { -5, 28, 28, 19 },   // 4  Medalhao da Sombra (superior esquerdo)
+    { 47, 58, 28, 19 },   // 5  Medalhao da Luz (superior)
     { 0, 0, 0, 0 },       // 6..17 musicas: nao existem mais aqui
     { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },
     { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },       { 0, 0, 0, 0 },
     { 0, 0, 0, 0 },
-    { 180, 122, 24, 15 }, // 18 Esmeralda Kokiri (centro do hexagono)
-    { 208, 122, 24, 15 }, // 19 Rubi Goron
-    { 236, 122, 24, 15 }, // 20 Safira Zora
-    { 300, 139, 24, 15 }, // 21 Pedra da Agonia (coluna da direita)
-    { 300, 177, 24, 15 }, // 22 Cartao Gerudo
-    { 300, 50, 24, 15 },  // 23 Skulltula Dourada (o contador fica logo abaixo)
-    { 300, 101, 28, 15 }, // 24 Peca de Coracao
+    { 15, -2, 24, 14 },   // 18 Esmeralda Kokiri (centro do hexagono)
+    { 47, -2, 24, 14 },   // 19 Rubi Goron (e o centro do hexagono)
+    { 79, -2, 24, 14 },   // 20 Safira Zora
+    { 136, -19, 24, 15 }, // 21 Pedra da Agonia (coluna da direita)
+    { 136, -55, 24, 15 }, // 22 Cartao Gerudo
+    { 136, 68, 24, 15 },  // 23 Skulltula Dourada (o contador fica logo abaixo)
+    { 136, 18, 24, 15 },  // 24 Peca de Coracao
 };
 
 // Navegacao: { cima, baixo, esquerda, direita }. -1 = nada, -3 = seta de pagina da esquerda, -2 = da direita.
@@ -72,12 +74,13 @@ bool KaleidoScope_IsTabbedQuestPage(PauseContext* pauseCtx) {
            !pauseCtx->randoQuestMode;
 }
 
-bool KaleidoScope_GetQuestSlotScreen(s16 slot, s16* x, s16* y, s16* ring) {
+// Centro do slot em QUARTOS de unidade de tela (precisao de ~1 pixel) e raio da moldura em unidades de tela
+bool KaleidoScope_GetQuestSlotCenterQ(s16 slot, s32* xq, s32* yq, s16* ring) {
     if (slot < 0 || slot >= QUEST_SLOT_COUNT || sQuestSlotLayout[slot].icon == 0) {
         return false;
     }
-    *x = sQuestSlotLayout[slot].x;
-    *y = sQuestSlotLayout[slot].y;
+    *xq = (s32)(4.0f * (160.0f + sQuestSlotLayout[slot].x * 1.03f) + 0.5f);
+    *yq = (s32)(4.0f * (120.0f - sQuestSlotLayout[slot].y * 1.03f) + 0.5f);
     *ring = sQuestSlotLayout[slot].ring;
     return true;
 }
@@ -105,8 +108,8 @@ void KaleidoScope_SetQuestTabbedVertices(PauseContext* pauseCtx) {
         const QuestSlotLayout* l = &sQuestSlotLayout[slot];
         Vtx* v = &pauseCtx->questVtx[slot * 4];
         s16 half = l->icon / 2;
-        s16 px = ((l->x - 160) * 100) / QUEST_PAGE_SCALE_X100;
-        s16 py = ((120 - l->y) * 100) / QUEST_PAGE_SCALE_X100;
+        s16 px = l->x;
+        s16 py = l->y;
 
         if (l->icon == 0) {
             continue;
@@ -121,8 +124,8 @@ void KaleidoScope_SetQuestTabbedVertices(PauseContext* pauseCtx) {
     // Contador de Skulltulas: ate 3 digitos, centralizado logo abaixo do icone. Quadrilateros 41..43 = sombra,
     // 44..46 = digitos (o jogo so desenha os digitos que existem; o ultimo sempre).
     n = (gSaveContext.inventory.gsTokens >= 100) ? 3 : (gSaveContext.inventory.gsTokens >= 10) ? 2 : 1;
-    pcx = ((sQuestSlotLayout[23].x - 160) * 100) / QUEST_PAGE_SCALE_X100;
-    ytop = ((120 - (sQuestSlotLayout[23].y + 18)) * 100) / QUEST_PAGE_SCALE_X100;
+    pcx = sQuestSlotLayout[23].x;
+    ytop = sQuestSlotLayout[23].y - 18;
 
     for (k = 0; k < 3; k++) {
         s16 x0 = pcx - 12 + k * 8 + (4 * n - 12);
