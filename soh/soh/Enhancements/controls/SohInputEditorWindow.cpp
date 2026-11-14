@@ -9,7 +9,6 @@
 #include "soh/SohGui/SohGui.hpp"
 #include "soh/cvar_prefixes.h"
 #include "soh/SohGui/UIWidgets.hpp"
-#include "soh/Enhancements/MicOcarina/MicOcarina.h"
 
 extern "C" {
 #include "z64.h"
@@ -29,7 +28,6 @@ static WidgetInfo mouseAutoCapture;
 static WidgetInfo mouseDisableThirdPerson;
 static WidgetInfo rightStickOcarina;
 static WidgetInfo dpadOcarina;
-static WidgetInfo micOcarina;
 static WidgetInfo dpadPause;
 static WidgetInfo dpadText;
 
@@ -1349,41 +1347,7 @@ void SohInputEditorWindow::DrawOcarinaControlPanel() {
     CheckboxOptions checkOpt = CheckboxOptions().Color(THEME_COLOR);
     SohGui::mSohMenu->MenuDrawItem(dpadOcarina, THEME_COLOR);
     SohGui::mSohMenu->MenuDrawItem(rightStickOcarina, THEME_COLOR);
-    SohGui::mSohMenu->MenuDrawItem(micOcarina, THEME_COLOR);
-    if (CVarGetInteger(CVAR_SETTING("CustomOcarina.Microphone"), 0)) {
-        CVarSliderInt("Mic Sensitivity: %d", CVAR_SETTING("CustomOcarina.MicSensitivity"),
-                      IntSliderOptions().Color(THEME_COLOR).Min(0).Max(100).DefaultValue(45).ShowButtons(true));
-        CVarSliderInt("Mic Octave Shift: %d", CVAR_SETTING("CustomOcarina.MicOctave"),
-                      IntSliderOptions().Color(THEME_COLOR).Min(-3).Max(3).DefaultValue(0).ShowButtons(true));
-        CVarSliderInt("Mic Tuning (cents): %d", CVAR_SETTING("CustomOcarina.MicTuning"),
-                      IntSliderOptions().Color(THEME_COLOR).Min(-50).Max(50).DefaultValue(0).ShowButtons(true));
-        CVarCheckbox("Mute In-Game Ocarina While Playing", CVAR_SETTING("CustomOcarina.MicMute"),
-                     CheckboxOptions()
-                         .Color(THEME_COLOR)
-                         .Tooltip("The in-game ocarina stays silent while you play on your real instrument or "
-                                  "hum, like the remake. Only the notes played with the microphone are muted; "
-                                  "the game still plays the song once you play the melody correctly."));
-        CVarCheckbox("Show Microphone Indicator", CVAR_SETTING("CustomOcarina.MicVisual"),
-                     CheckboxOptions()
-                         .Color(THEME_COLOR)
-                         .Tooltip("Shows streaks of light across the screen while the game is picking up sound "
-                                  "from your microphone. Blue = A, yellow = C buttons, gray = sound heard but "
-                                  "not a valid ocarina note."));
-        CVarCheckbox("Hide Microphone Status Icon", CVAR_SETTING("CustomOcarina.MicHideStatus"),
-                     CheckboxOptions()
-                         .Color(THEME_COLOR)
-                         .Tooltip("By default, a microphone icon at the top of the screen tells you whether the "
-                                  "microphone is on or off while the ocarina is out. Check this to hide it."));
-
-        // Live preview so the user can calibrate without opening the ocarina in-game
-        MicOcarina_Poll(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicOctave"), 0),
-                        CVarGetInteger(CVAR_SETTING("CustomOcarina.MicSensitivity"), 45),
-                        CVarGetInteger(CVAR_SETTING("CustomOcarina.MicTuning"), 0));
-        static const char* micNoteNames[] = { "A (D4)", "C-Down (F4)", "C-Right (A4)", "C-Left (B4)", "C-Up (D5)" };
-        int micNote = MicOcarina_GetNote();
-        ImGui::Text("Mic: %.0f Hz  ->  %s", MicOcarina_GetDebugHz(),
-                    (micNote >= 0 && micNote <= 4) ? micNoteNames[micNote] : "-");
-    }
+    ImGui::TextDisabled("Microphone Ocarina settings are now in the \"ReDemake\" menu.");
     CVarCheckbox("Customize Ocarina Controls", CVAR_SETTING("CustomOcarina.Enabled"), checkOpt);
 
     if (!CVarGetInteger(CVAR_SETTING("CustomOcarina.Enabled"), 0)) {
@@ -1970,15 +1934,6 @@ void RegisterInputEditorWidgets() {
     rightStickOcarina = { .name = "Right Stick Ocarina Playback", .type = WidgetType::WIDGET_CVAR_CHECKBOX };
     rightStickOcarina.CVar(CVAR_SETTING("CustomOcarina.RightStick")).Options(CheckboxOptions().Color(THEME_COLOR));
     SohGui::mSohMenu->AddSearchWidget({ rightStickOcarina, "Settings", "Controls", "Ocarina Controls" });
-
-    micOcarina = { .name = "Microphone Ocarina Playback", .type = WidgetType::WIDGET_CVAR_CHECKBOX };
-    micOcarina.CVar(CVAR_SETTING("CustomOcarina.Microphone"))
-        .Options(CheckboxOptions()
-                     .Color(THEME_COLOR)
-                     .Tooltip("Play ocarina notes by humming, singing or playing a real instrument into your "
-                              "microphone. Recognized notes: D, F, A, B and high D. Use the sliders below to "
-                              "calibrate octave, sensitivity and tuning."));
-    SohGui::mSohMenu->AddSearchWidget({ micOcarina, "Settings", "Controls", "Ocarina Controls" });
 
     dpadPause = { .name = "D-pad Support on Pause Screen", .type = WidgetType::WIDGET_CVAR_CHECKBOX };
     dpadPause.CVar(CVAR_SETTING("DPadOnPause"))

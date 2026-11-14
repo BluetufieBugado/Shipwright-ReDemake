@@ -40,6 +40,7 @@ class SohMenu : public Ship::Menu {
     void AddMenuElements();
     void AddMenuSettings();
     void AddMenuEnhancements();
+    void AddMenuReDemake();
     void AddMenuDevTools();
     void AddMenuRandomizer();
     void AddMenuNetwork();

@@ -713,8 +713,9 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Animated Link in Pause Menu", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PauseMenuAnimatedLink"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Turns the Static Image of Link in the Pause Menu's Equipment Subscreen "
-                                           "into a model cycling through his idle animations."));
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Turns the Static Image of Link in the Pause Menu's Equipment Subscreen "
+            "into a model cycling through his idle animations."));
     AddWidget(path, "Show Age-Dependent Equipment", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"))
         .RaceDisable(false)
