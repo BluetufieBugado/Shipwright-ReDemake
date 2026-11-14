@@ -968,3 +968,11 @@ void Menu::DrawElement() {
     ImGui::End();
 }
 } // namespace Ship
+// Cole isto no FINAL de soh/soh/SohGui/Menu.cpp (fora de qualquer namespace).
+// Usa a mesma chamada que o Esc faz (Gui.cpp: GetMenu()->ToggleVisibility()).
+extern "C" void SohGui_ToggleMenuFromPause(void) {
+    auto menu = Ship::Context::GetRawInstance()->GetWindow()->GetGui()->GetMenu();
+    if (menu) {
+        menu->ToggleVisibility();
+    }
+}
