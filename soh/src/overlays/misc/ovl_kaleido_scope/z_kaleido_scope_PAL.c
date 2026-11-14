@@ -1497,15 +1497,16 @@ static bool KaleidoScope_IsTabbedMapPage(PauseContext* pauseCtx) {
     return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_MAP;
 }
 
-// "Better Save Menu": no menu em abas, o prompt de salvar vira uma janelinha em vez da pagina de save
-static bool KaleidoScope_UseSavePopup(PauseContext* pauseCtx) {
-    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
-           CVarGetInteger(CVAR_ENHANCEMENT("BetterSaveMenu"), 1) != 0 && !pauseCtx->randoQuestMode;
+// Menu em abas durante o prompt de salvar (state 7): mantem o layout da aba (sem paginas vizinhas, mapa no lugar).
+// So desenho: nao altera nada da logica do prompt do SoH.
+static bool KaleidoScope_SaveLayoutActive(PauseContext* pauseCtx) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && !pauseCtx->randoQuestMode &&
+           pauseCtx->state == 7;
 }
 
 static f32 KaleidoScope_GetMapPageShiftX(PauseContext* pauseCtx) {
     // No prompt de salvar (estado 7) a sidebar nao e desenhada, entao o mapa volta ao centro
-    return (KaleidoScope_IsTabbedMapPage(pauseCtx) && (pauseCtx->state != 7 || KaleidoScope_UseSavePopup(pauseCtx)))
+    return (KaleidoScope_IsTabbedMapPage(pauseCtx) && (pauseCtx->state != 7 || KaleidoScope_SaveLayoutActive(pauseCtx)))
                ? MAP_PAGE_SHIFT_X
                : 0.0f;
 }
@@ -1716,8 +1717,7 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
         // Com o menu em abas, nao desenha as faces vizinhas do cubo quando o menu esta totalmente aberto
         bool hideInactivePages = CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
-                                 (pauseCtx->state == 6 || tabbedOpenClose ||
-                                  (pauseCtx->state == 7 && KaleidoScope_UseSavePopup(pauseCtx)));
+                                 (pauseCtx->state == 6 || tabbedOpenClose || KaleidoScope_SaveLayoutActive(pauseCtx));
 
         if (pauseCtx->pageIndex && !hideInactivePages) { // pageIndex != PAUSE_ITEM
             gDPPipeSync(OVERLAY_DISP++);
@@ -1911,8 +1911,7 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 
     Gfx_SetupDL_42Opa(gfxCtx);
 
-    if ((!(pauseCtx->state == 7 && KaleidoScope_UseSavePopup(pauseCtx)) &&
-         GameInteractor_Should(VB_DRAW_SAVE_MENU, pauseCtx->state == 7, pauseCtx)) ||
+    if ((GameInteractor_Should(VB_DRAW_SAVE_MENU, pauseCtx->state == 7, pauseCtx)) ||
         ((pauseCtx->state >= 8) && (pauseCtx->state < 0x12))) {
         KaleidoScope_UpdatePrompt(play);
 
@@ -3809,8 +3808,7 @@ bool KaleidoScope_IsMapTabShown(PauseContext* pauseCtx) {
 
     if (pauseCtx->state == 4 || pauseCtx->state == 5) {
         KaleidoScope_GetOpenFinalView(pauseCtx, &eyeX, &eyeZ, &page);
-    } else if (pauseCtx->state != 6 && pauseCtx->state != 0x12 &&
-               !(pauseCtx->state == 7 && KaleidoScope_UseSavePopup(pauseCtx))) {
+    } else if (pauseCtx->state != 6 && pauseCtx->state != 0x12 && !KaleidoScope_SaveLayoutActive(pauseCtx)) {
         return false;
     }
 
@@ -5986,8 +5984,6 @@ static void KaleidoScope_DrawMapSidebar(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-#include "z_kaleido_save_popup.inc"
-
 void KaleidoScope_Draw(PlayState* play) {
     Input* input = &play->state.input[0];
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -6077,15 +6073,13 @@ void KaleidoScope_Draw(PlayState* play) {
 
         KaleidoScope_SetView(pauseCtx, 0.0f, 0.0f, 64.0f);
 
-        if (!((pauseCtx->state >= 8) && (pauseCtx->state <= 0x11)) &&
-            !(pauseCtx->state == 7 && KaleidoScope_UseSavePopup(pauseCtx))) {
+        if (!((pauseCtx->state >= 8) && (pauseCtx->state <= 0x11))) {
             KaleidoScope_DrawInfoPanel(play);
         }
 
         // Barra de abas no topo (menu aberto, abertura e fechamento)
         if (tabbedMenu && (pauseCtx->state == 4 || pauseCtx->state == 5 || pauseCtx->state == 6 ||
-                           pauseCtx->state == 0x12 ||
-                           (pauseCtx->state == 7 && KaleidoScope_UseSavePopup(pauseCtx))) &&
+                           pauseCtx->state == 0x12 || KaleidoScope_SaveLayoutActive(pauseCtx)) &&
             pauseCtx->pageIndex <= PAUSE_EQUIP) {
             KaleidoScope_DrawTabBar(play);
             KaleidoScope_DrawTabBarRupees(play);
@@ -6106,15 +6100,10 @@ void KaleidoScope_Draw(PlayState* play) {
             KaleidoScope_DrawQuestDetailPanel(play);
         }
 
-        // Sidebar da aba Mapa (menu aberto, ou parada atras da janelinha de salvar)
-        if (tabbedMenu && (pauseCtx->state == 6 || (pauseCtx->state == 7 && KaleidoScope_UseSavePopup(pauseCtx))) &&
+        // Sidebar da aba Mapa (menu aberto, ou parada durante o prompt de salvar)
+        if (tabbedMenu && (pauseCtx->state == 6 || KaleidoScope_SaveLayoutActive(pauseCtx)) &&
             KaleidoScope_IsTabbedMapPage(pauseCtx)) {
             KaleidoScope_DrawMapSidebar(play);
-        }
-
-        // Janelinha de salvar (por cima de tudo)
-        if (tabbedMenu && pauseCtx->state == 7 && KaleidoScope_UseSavePopup(pauseCtx)) {
-            KaleidoScope_DrawSavePopup(play);
         }
 
         // Nome do equipamento dentro do oval (pagina de equipamento com o menu aberto)
@@ -7010,9 +6999,6 @@ void KaleidoScope_Update(PlayState* play) {
 
         case 7:
             if (GameInteractor_Should(VB_LOAD_SAVE_MENU, 1, play)) {
-                if (KaleidoScope_SavePopupUpdate(play)) {
-                    break;
-                }
                 switch (pauseCtx->unk_1EC) {
                     case 0:
                         pauseCtx->unk_204 -= 314.0f / WREG(6);
