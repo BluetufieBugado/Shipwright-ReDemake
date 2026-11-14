@@ -9,6 +9,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -24,9 +25,20 @@ constexpr int kMaxTau = 1024;  // ~43 Hz
 constexpr int kMinTau = 20;    // ~2200 Hz (cobre flauta doce aguda)
 constexpr float kYinThresh = 0.15f;
 constexpr int kHopMs = 12;
-constexpr int kNeedStable = 5;      // ~60 ms para aceitar uma nota
-constexpr int kNeedSilence = 7;     // ~84 ms de silêncio para soltar
+constexpr int kNeedSilence = 7;     // ~84 ms de silêncio para soltar a nota
 constexpr Uint32 kIdleTimeoutMs = 3000;
+
+// --- Estabilizador de notas (votação) ---
+// Cada análise (~12 ms) vota em uma nota. Olhamos as últimas kHist votações:
+//  - kAttackSkip: quadros ignorados no começo de cada nota (o ataque é instável).
+//  - kAcquire: votos (de kHist) para aceitar uma nota vinda do silêncio.
+//  - kSwitch: votos (de kHist) para trocar de uma nota segurada para outra.
+//    Quanto MAIOR, mais tolerante a desvios (mas a troca de nota demora um pouco mais).
+//    Desvios de até (kHist - kSwitch) quadros são ignorados.
+constexpr int kHist = 8;
+constexpr int kAttackSkip = 2;
+constexpr int kAcquire = 5;
+constexpr int kSwitch = 6;
 
 SDL_AudioDeviceID gDev = 0;
 std::thread gThread;
@@ -151,8 +163,17 @@ int FreqToNote(float hz, int held) {
 
 void Worker() {
     std::vector<float> window(kWindow);
-    int candidate = -1, candCount = 0, silenceCount = 0;
+    std::array<int, kHist> hist;
+    hist.fill(-1);
+    size_t hpos = 0;
+    int silenceCount = 0;
+    int attackSkip = kAttackSkip;
     int stable = -1;
+
+    auto push = [&](int v) {
+        hist[hpos] = v;
+        hpos = (hpos + 1) % kHist;
+    };
 
     while (gRun) {
         std::this_thread::sleep_for(std::chrono::milliseconds(kHopMs));
@@ -186,20 +207,39 @@ void Worker() {
         gDebugHz.store(hz);
 
         if (now < 0) {
+            push(-1);
             if (++silenceCount >= kNeedSilence) {
                 stable = -1;
-                candidate = -1;
-                candCount = 0;
+                hist.fill(-1);
+                attackSkip = kAttackSkip;
             }
         } else {
             silenceCount = 0;
-            if (now == candidate) {
-                if (++candCount >= kNeedStable) {
-                    stable = now;
-                }
+            if (stable < 0 && attackSkip > 0) {
+                attackSkip--; // ignora o ataque instável do começo da nota
             } else {
-                candidate = now;
-                candCount = 1;
+                push(now);
+                int counts[5] = { 0, 0, 0, 0, 0 };
+                for (int h : hist) {
+                    if (h >= 0) {
+                        counts[h]++;
+                    }
+                }
+                int best = 0;
+                for (int i = 1; i < 5; i++) {
+                    if (counts[i] > counts[best]) {
+                        best = i;
+                    }
+                }
+                const int last = hist[(hpos + kHist - 1) % kHist];
+                if (stable < 0) {
+                    if (counts[best] >= kAcquire && last == best) {
+                        stable = best;
+                    }
+                } else if (best != stable && counts[best] >= kSwitch && counts[best] > counts[stable] &&
+                           last == best) {
+                    stable = best;
+                }
             }
         }
         gNote.store(stable);

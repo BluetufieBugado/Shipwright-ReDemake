@@ -1369,6 +1369,11 @@ void SohInputEditorWindow::DrawOcarinaControlPanel() {
                          .Tooltip("Shows streaks of light across the screen while the game is picking up sound "
                                   "from your microphone. Blue = A, yellow = C buttons, gray = sound heard but "
                                   "not a valid ocarina note."));
+        CVarCheckbox("Hide Microphone Status Icon", CVAR_SETTING("CustomOcarina.MicHideStatus"),
+                     CheckboxOptions()
+                         .Color(THEME_COLOR)
+                         .Tooltip("By default, a microphone icon at the top of the screen tells you whether the "
+                                  "microphone is on or off while the ocarina is out. Check this to hide it."));
 
         // Live preview so the user can calibrate without opening the ocarina in-game
         MicOcarina_Poll(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicOctave"), 0),
