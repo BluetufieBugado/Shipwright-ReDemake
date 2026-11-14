@@ -3,7 +3,9 @@
 #include "MicOcarina.h"
 
 #include <imgui.h>
-
+#ifndef IM_PI
+#define IM_PI 3.14159265358979323846f
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -100,7 +102,7 @@ void DrawMicIcon(ImDrawList* dl, ImVec2 c, float r, bool on) {
     const float t = std::max(1.5f, r * 0.12f);
     dl->AddCircleFilled(c, r, bg, 32);
     dl->AddRectFilled(ImVec2(c.x - r * 0.2f, c.y - r * 0.52f), ImVec2(c.x + r * 0.2f, c.y + r * 0.12f), fg, r * 0.2f);
-    dl->PathArcTo(ImVec2(c.x, c.y + r * 0.02f), r * 0.38f, 0.0f, IM_PI, 16);
+    dl->PathArcTo(ImVec2(c.x, c.y + r * 0.02f), r * 0.38f, 0.0f, 3.14159265f, 16);
     dl->PathStroke(fg, 0, t);
     dl->AddLine(ImVec2(c.x, c.y + r * 0.40f), ImVec2(c.x, c.y + r * 0.62f), fg, t);
     dl->AddLine(ImVec2(c.x - r * 0.24f, c.y + r * 0.62f), ImVec2(c.x + r * 0.24f, c.y + r * 0.62f), fg, t);
