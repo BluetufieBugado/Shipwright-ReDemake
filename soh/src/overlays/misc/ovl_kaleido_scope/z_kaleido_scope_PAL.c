@@ -1343,9 +1343,17 @@ void KaleidoScope_HandlePageToggles(PauseContext* pauseCtx, Input* input) {
     }
 }
 
+static bool KaleidoScope_IsTabbedMapPage(PauseContext* pauseCtx);
+
 void KaleidoScope_DrawCursor(PlayState* play, u16 pageIndex) {
     PauseContext* pauseCtx = &play->pauseCtx;
     u16 temp;
+
+    // Aba Mapa em modo abas: com o foco na sidebar (cursor no "ponto especial" da esquerda) nao desenha o cursor do mapa
+    if (pageIndex == PAUSE_MAP && KaleidoScope_IsTabbedMapPage(pauseCtx) &&
+        pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT) {
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -1490,7 +1498,8 @@ static bool KaleidoScope_IsTabbedMapPage(PauseContext* pauseCtx) {
 }
 
 static f32 KaleidoScope_GetMapPageShiftX(PauseContext* pauseCtx) {
-    return KaleidoScope_IsTabbedMapPage(pauseCtx) ? MAP_PAGE_SHIFT_X : 0.0f;
+    // No prompt de salvar (estado 7) a sidebar nao e desenhada, entao o mapa volta ao centro
+    return (KaleidoScope_IsTabbedMapPage(pauseCtx) && pauseCtx->state != 7) ? MAP_PAGE_SHIFT_X : 0.0f;
 }
 
 // Faixa azul com o nome (e o "A to Equip" do rodape original): some nas abas Itens e Equipamento, que desenham o nome
@@ -5613,23 +5622,104 @@ static void KaleidoScope_DrawQuestDetailPanel(PlayState* play) {
 
 // ---- Sidebar da aba Mapa ----
 #define MAP_SIDEBAR_COUNT 3
-#define MAP_SIDEBAR_X 16
+// Posicoes em unidades de tela (320x240). Para mover tudo mais para a esquerda/direita, mude so MAP_SIDEBAR_X.
+#define MAP_SIDEBAR_X 0
 #define MAP_SIDEBAR_W 104
-#define MAP_SIDEBAR_BTN_X 24
+#define MAP_SIDEBAR_BTN_X (MAP_SIDEBAR_X + 8)
 #define MAP_SIDEBAR_BTN_W 88
 #define MAP_SIDEBAR_BTN_H 28
 #define MAP_SIDEBAR_BTN_Y0 64
 #define MAP_SIDEBAR_BTN_STEP 38
-// Provisorio: destaca o primeiro botao so para visualizar o estilo. Trocar por foco/input real (proxima etapa).
-#define MAP_SIDEBAR_PREVIEW_HIGHLIGHT 1
+
+typedef enum {
+    MAP_SIDEBAR_SAVE,
+    MAP_SIDEBAR_LOAD,
+    MAP_SIDEBAR_SETTINGS,
+} MapSidebarButton;
+
+// Definida em soh/soh/SohGui/Menu.cpp (abre/fecha o menu do Ship, o mesmo do Esc)
+extern void SohGui_ToggleMenuFromPause(void);
+
+static s16 sMapSidebarIndex = 0;
+
+// O foco da sidebar e o "ponto especial" da esquerda do mapa (onde ficava a seta de pagina). Entrar e sair dele ja
+// e tratado pelo z_kaleido_map_PAL.c: esquerda na borda do mapa entra, direita volta ao mapa.
+static bool KaleidoScope_MapSidebarHasFocus(PauseContext* pauseCtx) {
+    return pauseCtx->state == 6 && pauseCtx->unk_1E4 == 0 && pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT;
+}
+
+// Mesmo que apertar B na pagina: abre o prompt "Salvar?"
+static void KaleidoScope_MapSidebarOpenSavePrompt(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+
+    pauseCtx->mode = 0;
+    pauseCtx->promptChoice = 0;
+    Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    gSaveContext.buttonStatus[0] = gSaveContext.buttonStatus[1] = gSaveContext.buttonStatus[2] =
+        gSaveContext.buttonStatus[3] = BTN_DISABLED;
+    gSaveContext.buttonStatus[4] = BTN_ENABLED;
+    gSaveContext.buttonStatus[5] = gSaveContext.buttonStatus[6] = gSaveContext.buttonStatus[7] =
+        gSaveContext.buttonStatus[8] = BTN_DISABLED;
+    gSaveContext.hudVisibilityMode = 0;
+    Interface_ChangeHudVisibilityMode(50);
+    pauseCtx->unk_1EC = 0;
+    pauseCtx->state = 7;
+}
+
+static void KaleidoScope_MapSidebarUpdate(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+    bool dpad = CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0);
+
+    if (!KaleidoScope_MapSidebarHasFocus(pauseCtx)) {
+        return;
+    }
+
+    if ((pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP))) {
+        if (sMapSidebarIndex > 0) {
+            sMapSidebarIndex--;
+            Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+    } else if ((pauseCtx->stickRelY < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DDOWN))) {
+        if (sMapSidebarIndex < MAP_SIDEBAR_COUNT - 1) {
+            sMapSidebarIndex++;
+            Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+    }
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        switch (sMapSidebarIndex) {
+            case MAP_SIDEBAR_SAVE:
+                KaleidoScope_MapSidebarOpenSavePrompt(play);
+                break;
+            case MAP_SIDEBAR_LOAD:
+                // TODO: escolher entre os 3 slots e carregar (proxima etapa)
+                Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                break;
+            case MAP_SIDEBAR_SETTINGS:
+                Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                SohGui_ToggleMenuFromPause();
+                break;
+        }
+    }
+}
 
 static void KaleidoScope_DrawMapSidebar(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
     u8* texs[MAP_SIDEBAR_COUNT] = { sSidebarTexSave, sSidebarTexLoad, sSidebarTexSettings };
     s32 texW[MAP_SIDEBAR_COUNT] = { SIDEBAR_TEX_SAVE_W, SIDEBAR_TEX_LOAD_W, SIDEBAR_TEX_SETTINGS_W };
-    s32 selected = MAP_SIDEBAR_PREVIEW_HIGHLIGHT ? 0 : -1;
+    s32 selected;
     s32 i;
+
+    KaleidoScope_MapSidebarUpdate(play);
+    // Destaca o botao so quando a sidebar tem o foco (depois da acao, o estado pode ter mudado)
+    selected = KaleidoScope_MapSidebarHasFocus(pauseCtx) ? sMapSidebarIndex : -1;
 
     OPEN_DISPS(play->state.gfxCtx);
 
