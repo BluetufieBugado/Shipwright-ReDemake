@@ -1443,6 +1443,9 @@ s32 SetCameraManual(Camera* camera) {
     return 0;
 }
 
+// SOH [Enhancement] Set by Camera_Parallel1 while aiming in third person so Camera_Free shifts over Link's shoulder
+static s32 sFreeCamShoulderAim = false;
+
 s32 Camera_Free(Camera* camera) {
     Vec3f* eye = &camera->eye;
     Vec3f* at = &camera->at;
@@ -1467,13 +1470,26 @@ s32 Camera_Free(Camera* camera) {
     }
     sFreeLastFrame = curFrame;
 
-    at->x = Camera_LERPCeilF(camera->player->actor.world.pos.x, camera->at.x, 0.5f, 1.0f);
+    // SOH [Enhancement] Third-person aim: move the camera to Link's left (over-the-shoulder), so Link sits on the
+    // right side of the screen and the center of the screen (future reticle) stays clear.
+    f32 shoulderX = 0.0f;
+    f32 shoulderZ = 0.0f;
+    if (sFreeCamShoulderAim) {
+        f32 shoulder =
+            Player_GetHeight(camera->player) * CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimShoulder"), 0.35f);
+
+        // camX is the yaw from `at` to `eye`; Link's left as seen from the camera is perpendicular to it.
+        shoulderX = -Math_CosS(camera->play->camX) * shoulder;
+        shoulderZ = Math_SinS(camera->play->camX) * shoulder;
+    }
+
+    at->x = Camera_LERPCeilF(camera->player->actor.world.pos.x + shoulderX, camera->at.x, 0.5f, 1.0f);
     at->y = Camera_LERPCeilF(camera->player->actor.world.pos.y + (camera->player->rideActor != NULL
                                                                       ? Player_GetHeight(camera->player) / 2
                                                                       : Player_GetHeight(camera->player)) /
                                                                      1.2f,
                              camera->at.y, 0.5f, 1.0f);
-    at->z = Camera_LERPCeilF(camera->player->actor.world.pos.z, camera->at.z, 0.5f, 1.0f);
+    at->z = Camera_LERPCeilF(camera->player->actor.world.pos.z + shoulderZ, camera->at.z, 0.5f, 1.0f);
 
     playerHeight = Player_GetHeight(camera->player);
 
@@ -2155,7 +2171,9 @@ s32 Camera_Parallel1(Camera* camera) {
     if (CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && camera->player != NULL &&
         (camera->player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) && camera->player->unk_6AD == 2) {
         camera->play->manualCamera = true;
+        sFreeCamShoulderAim = true;
         Camera_Free(camera);
+        sFreeCamShoulderAim = false;
         return 1;
     }
 
