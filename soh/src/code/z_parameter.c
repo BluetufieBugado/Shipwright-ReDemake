@@ -69,6 +69,14 @@ static bool Interface_HideCButtonsForQuestTab(PlayState* play) {
     return KaleidoScope_IsQuestTabShown(&play->pauseCtx);
 }
 
+// Menu de pausa em abas, aba Mapa: esconde o HUD inteiro (coracoes, magia, botoes B/Start/A/C com icones e legendas).
+// A funcao fica em z_kaleido_scope_PAL.c (sabe qual sera a pagina final durante a abertura).
+extern bool KaleidoScope_IsMapTabShown(PauseContext* pauseCtx);
+
+static bool Interface_HideHudForMapTab(PlayState* play) {
+    return KaleidoScope_IsMapTabShown(&play->pauseCtx);
+}
+
 extern MessageTableEntry* sNesMessageEntryTablePtr;
 extern MessageTableEntry* sGerMessageEntryTablePtr;
 extern MessageTableEntry* sFraMessageEntryTablePtr;
@@ -5137,7 +5145,8 @@ const char* digitTextures[] = { gCounterDigit0Tex, gCounterDigit1Tex, gCounterDi
 
 void Interface_Draw(PlayState* play) {
     s16 pauseHudOffsetY = Interface_GetTabbedPauseHudOffsetY(play);
-    bool hideCButtons = Interface_HideCButtonsForQuestTab(play);
+    bool hideHudForMapTab = Interface_HideHudForMapTab(play);
+    bool hideCButtons = Interface_HideCButtonsForQuestTab(play) || hideHudForMapTab;
     static s16 magicArrowEffectsR[] = { 255, 100, 255 };
     static s16 magicArrowEffectsG[] = { 0, 100, 255 };
     static s16 magicArrowEffectsB[] = { 0, 255, 100 };
@@ -5194,7 +5203,8 @@ void Interface_Draw(PlayState* play) {
     s16 svar4;
     s16 svar5;
     s16 timerId;
-    bool fullUi = !CVarGetInteger(CVAR_ENHANCEMENT("MinimalUI"), 0) || !R_MINIMAP_DISABLED || play->pauseCtx.state != 0;
+    bool fullUi = (!CVarGetInteger(CVAR_ENHANCEMENT("MinimalUI"), 0) || !R_MINIMAP_DISABLED || play->pauseCtx.state != 0) &&
+                  !hideHudForMapTab;
     // #region SOH [NTSC]
     s32 languageOffset = gSaveContext.language;
 
@@ -5217,7 +5227,7 @@ void Interface_Draw(PlayState* play) {
     if (pauseCtx->debugState == 0) {
         Interface_InitVertices(play);
         func_8008A994(interfaceCtx);
-        if (fullUi || gSaveContext.health != gSaveContext.healthCapacity) {
+        if ((fullUi || gSaveContext.health != gSaveContext.healthCapacity) && !hideHudForMapTab) {
             HealthMeter_Draw(play);
         }
 
@@ -5460,7 +5470,7 @@ void Interface_Draw(PlayState* play) {
             Interface_DrawLineupTick(play);
         }
 
-        if (fullUi || gSaveContext.magicState > MAGIC_STATE_IDLE) {
+        if ((fullUi || gSaveContext.magicState > MAGIC_STATE_IDLE) && !hideHudForMapTab) {
             Interface_DrawMagicBar(play);
         }
 
@@ -5513,7 +5523,7 @@ void Interface_Draw(PlayState* play) {
                     Interface_DrawAmmoCount(play, 0, interfaceCtx->bAlpha);
                 }
             }
-        } else {
+        } else if (!hideHudForMapTab) {
             // B Button Do Action Label
             s16 PosX_adjust;
             s16 PosY_adjust;
@@ -5787,10 +5797,12 @@ void Interface_Draw(PlayState* play) {
         gSPMatrix(OVERLAY_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
         gSPVertex(OVERLAY_DISP++, &interfaceCtx->actionVtx[4], 4, 0);
 
-        if ((interfaceCtx->unk_1EC < 2) || (interfaceCtx->unk_1EC == 3)) {
-            Interface_DrawActionLabel(play->state.gfxCtx, interfaceCtx->doActionSegment[0]);
-        } else {
-            Interface_DrawActionLabel(play->state.gfxCtx, interfaceCtx->doActionSegment[1]);
+        if (!hideHudForMapTab) {
+            if ((interfaceCtx->unk_1EC < 2) || (interfaceCtx->unk_1EC == 3)) {
+                Interface_DrawActionLabel(play->state.gfxCtx, interfaceCtx->doActionSegment[0]);
+            } else {
+                Interface_DrawActionLabel(play->state.gfxCtx, interfaceCtx->doActionSegment[1]);
+            }
         }
 
         gDPPipeSync(OVERLAY_DISP++);

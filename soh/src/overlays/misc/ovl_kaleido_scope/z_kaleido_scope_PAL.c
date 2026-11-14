@@ -1481,23 +1481,9 @@ static bool KaleidoScope_IsTabbedItemPage(PauseContext* pauseCtx) {
     return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_ITEM;
 }
 
-// Faixa azul com o nome (e o "A to Equip" do rodape original): some nas abas Itens e Equipamento, que desenham o nome
-// por conta propria (painel de detalhes / dentro do oval).
-static bool KaleidoScope_HideNamePanel(PauseContext* pauseCtx) {
-    return KaleidoScope_IsTabbedItemPage(pauseCtx) || KaleidoScope_IsTabbedEquipPage(pauseCtx) ||
-           KaleidoScope_IsTabbedQuestPage(pauseCtx);
-}
-
-// Icones L/R das setas de pagina: escondidos nas abas Itens e (opcionalmente) Equipamento
-static bool KaleidoScope_HidePageArrowIcons(PauseContext* pauseCtx) {
-    return KaleidoScope_IsTabbedItemPage(pauseCtx) ||
-           (EQUIP_HIDE_PAGE_ARROWS && KaleidoScope_IsTabbedEquipPage(pauseCtx)) ||
-           KaleidoScope_IsTabbedQuestPage(pauseCtx);
-}
-
 // ---- Aba Mapa em modo abas: mapa deslocado para a direita, sidebar (Salvar/Carregar/Config.) a esquerda ----
 // Se o mapa andar para o lado errado, inverta o sinal; se ele se afastar/aproximar da camera, o eixo esta errado.
-#define MAP_PAGE_SHIFT_X (-64.0f)
+#define MAP_PAGE_SHIFT_X (64.0f)
 
 static bool KaleidoScope_IsTabbedMapPage(PauseContext* pauseCtx) {
     return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && pauseCtx->pageIndex == PAUSE_MAP;
@@ -1505,6 +1491,20 @@ static bool KaleidoScope_IsTabbedMapPage(PauseContext* pauseCtx) {
 
 static f32 KaleidoScope_GetMapPageShiftX(PauseContext* pauseCtx) {
     return KaleidoScope_IsTabbedMapPage(pauseCtx) ? MAP_PAGE_SHIFT_X : 0.0f;
+}
+
+// Faixa azul com o nome (e o "A to Equip" do rodape original): some nas abas Itens e Equipamento, que desenham o nome
+// por conta propria (painel de detalhes / dentro do oval).
+static bool KaleidoScope_HideNamePanel(PauseContext* pauseCtx) {
+    return KaleidoScope_IsTabbedItemPage(pauseCtx) || KaleidoScope_IsTabbedEquipPage(pauseCtx) ||
+           KaleidoScope_IsTabbedQuestPage(pauseCtx) || KaleidoScope_IsTabbedMapPage(pauseCtx);
+}
+
+// Icones L/R das setas de pagina: escondidos nas abas Itens e (opcionalmente) Equipamento
+static bool KaleidoScope_HidePageArrowIcons(PauseContext* pauseCtx) {
+    return KaleidoScope_IsTabbedItemPage(pauseCtx) ||
+           (EQUIP_HIDE_PAGE_ARROWS && KaleidoScope_IsTabbedEquipPage(pauseCtx)) ||
+           KaleidoScope_IsTabbedQuestPage(pauseCtx) || KaleidoScope_IsTabbedMapPage(pauseCtx);
 }
 
 void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
@@ -3775,6 +3775,25 @@ bool KaleidoScope_IsQuestTabShown(PauseContext* pauseCtx) {
     }
 
     return page == PAUSE_QUEST;
+}
+
+// Idem para a aba Mapa: usada pelo z_parameter.c para esconder o HUD (coracoes, magia, botoes) so nessa aba.
+bool KaleidoScope_IsMapTabShown(PauseContext* pauseCtx) {
+    f32 eyeX = pauseCtx->eye.x;
+    f32 eyeZ = pauseCtx->eye.z;
+    u16 page = pauseCtx->pageIndex;
+
+    if (CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) == 0 || pauseCtx->randoQuestMode) {
+        return false;
+    }
+
+    if (pauseCtx->state == 4 || pauseCtx->state == 5) {
+        KaleidoScope_GetOpenFinalView(pauseCtx, &eyeX, &eyeZ, &page);
+    } else if (pauseCtx->state != 6 && pauseCtx->state != 0x12) {
+        return false;
+    }
+
+    return page == PAUSE_MAP;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
