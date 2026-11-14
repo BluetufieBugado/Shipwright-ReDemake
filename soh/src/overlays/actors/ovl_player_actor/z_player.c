@@ -12809,12 +12809,41 @@ void func_8084B158(PlayState* play, Player* this, Input* input, f32 arg3) {
     LinkAnimation_Update(play, &this->skelAnime);
 }
 
+// SOH [Enhancement] Third-person aim: Link can walk while aiming. He always faces where the camera points
+// (see func_8084ABD8) and moves relative to the camera with the left stick, using the bow side-walk animation.
+static void Player_ThirdPersonAimMove(Player* this, PlayState* play) {
+    f32 speedTarget;
+    s16 yawTarget;
+    LinkAnimationHeader* walkAnim = func_8083356C(this);
+
+    if (Player_GetMovementSpeedAndYaw(this, &speedTarget, &yawTarget, SPEED_MODE_LINEAR, play)) {
+        speedTarget *= CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimSpeed"), 0.4f);
+        Math_StepToF(&this->linearVelocity, speedTarget, 1.5f);
+        this->yaw = yawTarget;
+
+        if (this->skelAnime.animation != walkAnim) {
+            Player_AnimPlayLoop(play, this, walkAnim);
+        }
+    } else {
+        // Keep sliding in the last direction while slowing down, then face forward again
+        if (Player_DecelerateToZero(this)) {
+            this->yaw = this->actor.shape.rot.y;
+        }
+
+        if (this->skelAnime.animation == walkAnim) {
+            Player_AnimPlayLoop(play, this, Player_GetIdleAnim(this));
+        }
+    }
+}
+
 void Player_Action_8084B1D8(Player* this, PlayState* play) {
     if (this->stateFlags1 & PLAYER_STATE1_IN_WATER) {
         func_8084B000(this);
         if (GameInteractor_Should(VB_PLAYER_FIRST_PERSON_DECELERATE, true, this)) {
             func_8084AEEC(this, &this->linearVelocity, 0, this->actor.shape.rot.y);
         }
+    } else if (Player_UseThirdPersonAim(this) && (this->unk_6AD == 2)) {
+        Player_ThirdPersonAimMove(this, play);
     } else if (GameInteractor_Should(VB_PLAYER_FIRST_PERSON_DECELERATE, true, this)) {
         Player_DecelerateToZero(this);
     }
@@ -12843,7 +12872,9 @@ void Player_Action_8084B1D8(Player* this, PlayState* play) {
         }
     }
 
-    if (GameInteractor_Should(VB_PLAYER_FIRST_PERSON_ALIGN_YAW, true, this)) {
+    // SOH [Enhancement] Third-person aim keeps its own movement direction in `yaw` (set by Player_ThirdPersonAimMove)
+    if (!(Player_UseThirdPersonAim(this) && (this->unk_6AD == 2)) &&
+        GameInteractor_Should(VB_PLAYER_FIRST_PERSON_ALIGN_YAW, true, this)) {
         this->yaw = this->actor.shape.rot.y;
     }
 }

@@ -1552,6 +1552,16 @@ s32 Camera_Free(Camera* camera) {
                          ? para1->distTarget
                          : CVarGetInteger(CVAR_SETTING("FreeLook.MaxCameraDistance"), para1->distTarget);
     f32 speedScaler = CVarGetInteger(CVAR_SETTING("FreeLook.TransitionSpeed"), 25);
+    f32 fovTarget = 65.0f;
+
+    // SOH [Enhancement] Third-person aim: zoom in (closer camera and narrower FOV). The zoom fades in/out smoothly
+    // because camera->dist and camera->fov are interpolated every frame below.
+    if (sFreeCamShoulderAim) {
+        distTarget *= CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimZoom"), 0.6f);
+        speedScaler = CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimTransitionSpeed"), 15.0f);
+        fovTarget = CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimFov"), 60.0f);
+    }
+
     f32 distDiff = ABS(distTarget - camera->dist);
     if (distDiff > 0)
         camera->dist = Camera_LERPCeilF(distTarget, camera->dist, speedScaler / (distDiff + speedScaler), 0.0f);
@@ -1568,7 +1578,7 @@ s32 Camera_Free(Camera* camera) {
         *eye = sp6C.pos;
     }
 
-    camera->fov = Camera_LERPCeilF(65.0f, camera->fov, camera->fovUpdateRate, 1.0f);
+    camera->fov = Camera_LERPCeilF(fovTarget, camera->fov, camera->fovUpdateRate, 1.0f);
     camera->roll = Camera_LERPCeilS(0, camera->roll, 0.5, 0xA);
 
     return 1;
