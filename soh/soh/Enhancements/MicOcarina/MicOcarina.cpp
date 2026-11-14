@@ -55,6 +55,7 @@ size_t gWrite = 0;
 std::atomic<float> gRmsThreshold{ 0.0126f };
 std::atomic<float> gTuningCents{ 0.0f };
 std::atomic<int> gOctaveShift{ 0 };
+std::atomic<bool> gTolerant{ false };
 std::atomic<float> gDebugHz{ 0.0f };
 std::atomic<float> gLevel{ 0.0f }; // 0 = silêncio; 0.25..1 = som acima do limiar (indicador visual)
 
@@ -152,7 +153,8 @@ int FreqToNote(float hz, int held) {
             bestDist = 0.0f;
         }
     }
-    if (bestDist > 0.7f) { // fora de ~70 cents de qualquer nota válida
+    // Fora de ~70 cents de qualquer nota válida: ignora, a não ser no modo tolerante (aceita a mais próxima).
+    if (bestDist > 0.7f && !gTolerant.load()) {
         return -1;
     }
     if (bestIdx == 0 && midi >= 72.0f) { // D agudo -> D5 (C-cima)
@@ -292,6 +294,10 @@ extern "C" void MicOcarina_Poll(int octaveShift, int sensitivity, int tuningCent
     if (!gRun) {
         StartInternal();
     }
+}
+
+extern "C" void MicOcarina_SetTolerant(int enabled) {
+    gTolerant.store(enabled != 0);
 }
 
 extern "C" int MicOcarina_GetNote(void) {

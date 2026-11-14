@@ -1296,6 +1296,8 @@ static u32 sOcarinaInputButtonPrev;
 static s32 sOcarinaInputButtonPress;
 static s32 D_8016BA1C;
 static u8 sCurOcarinaSongWithoutMusicStaff[8];
+// SoH: true when the most recent ocarina note came from the microphone
+static u8 sLastNoteFromMic = 0;
 static u8 sOcarinaWithoutMusicStaffPos;
 static u8 sOcarinaHasStartedSong;
 static u8 sFirstOcarinaSongIndex;
@@ -1779,6 +1781,124 @@ void AudioOcarina_CheckSongsWithMusicStaff(void) {
 }
 
 /**
+ * SoH: distance (insertions, deletions and substitutions) between two short note sequences.
+ */
+static int AudioOcarina_NoteEditDistance(const u8* a, int na, const u8* b, int nb) {
+    int prev[9];
+    int cur[9];
+    int i;
+    int j;
+
+    if (na > 8 || nb > 8) {
+        return 99;
+    }
+    for (j = 0; j <= nb; j++) {
+        prev[j] = j;
+    }
+    for (i = 1; i <= na; i++) {
+        cur[0] = i;
+        for (j = 1; j <= nb; j++) {
+            int best = prev[j - 1] + ((a[i - 1] == b[j - 1]) ? 0 : 1);
+            if (prev[j] + 1 < best) {
+                best = prev[j] + 1;
+            }
+            if (cur[j - 1] + 1 < best) {
+                best = cur[j - 1] + 1;
+            }
+            cur[j] = best;
+        }
+        for (j = 0; j <= nb; j++) {
+            prev[j] = cur[j];
+        }
+    }
+    return prev[nb];
+}
+
+/**
+ * SoH: microphone leniency. Called after an exact song match failed. Compares the last notes played with each
+ * available song and accepts the closest one if it is within the allowed number of wrong, missing or extra notes.
+ * Only songs with 5+ notes take part (short songs would be confused too easily), the last note played must be
+ * the song's last note, and the best match must be unique (a tie between two songs recognizes nothing).
+ */
+static void AudioOcarina_TryLenientSongMatch(void) {
+    int leniency = CVarGetInteger(CVAR_SETTING("CustomOcarina.MicLeniency"), 1);
+    int bestSong = -1;
+    int bestDist = 99;
+    int tie = 0;
+    int i;
+    int j;
+    int len;
+
+    if (leniency <= 0) {
+        return;
+    }
+    if (leniency > 2) {
+        leniency = 2;
+    }
+
+    for (i = sFirstOcarinaSongIndex; i < sLastOcarinaSongIndex; i++) {
+        u8 song[8];
+        int n = gOcarinaSongButtons[i].numButtons;
+        int allowed;
+        int songBest = 99;
+        int valid = 1;
+
+        if (i == OCARINA_SONG_SCARECROW_SPAWN || !(sAvailOcarinaSongFlags & (u16)(1 << i)) || n < 5 || n > 8) {
+            continue;
+        }
+        for (j = 0; j < n; j++) {
+            if (gOcarinaSongButtons[i].buttonsIndex[j] >= 5) {
+                valid = 0;
+                break;
+            }
+            song[j] = sButtonToPitchMap[gOcarinaSongButtons[i].buttonsIndex[j]];
+        }
+        if (!valid) {
+            continue;
+        }
+        // The last note played has to be the last note of the song
+        if (sOcarinaWithoutMusicStaffPos < 1 ||
+            sCurOcarinaSongWithoutMusicStaff[sOcarinaWithoutMusicStaffPos - 1] != song[n - 1]) {
+            continue;
+        }
+
+        allowed = n / 3; // 5 -> 1, 6..8 -> 2
+        if (allowed > leniency) {
+            allowed = leniency;
+        }
+
+        for (len = n - allowed; len <= n + allowed && len <= sOcarinaWithoutMusicStaffPos; len++) {
+            int d;
+            if (len < 1) {
+                continue;
+            }
+            d = AudioOcarina_NoteEditDistance(&sCurOcarinaSongWithoutMusicStaff[sOcarinaWithoutMusicStaffPos - len],
+                                              len, song, n);
+            if (d < songBest) {
+                songBest = d;
+            }
+        }
+        if (songBest > allowed) {
+            continue;
+        }
+
+        if (songBest < bestDist) {
+            bestDist = songBest;
+            bestSong = i;
+            tie = 0;
+        } else if (songBest == bestDist) {
+            tie = 1;
+        }
+    }
+
+    if (bestSong >= 0 && !tie) {
+        sPlayedOcarinaSongIndexPlusOne = bestSong + 1;
+        sIsOcarinaInputEnabled = false;
+        sOcarinaFlags = 0;
+    }
+}
+
+/**
  * Checks for ocarina songs from user input with no music staff prompt.
  * Includes ocarina actions such as free play, no warp
  */
@@ -1850,6 +1970,11 @@ void AudioOcarina_CheckSongsWithoutMusicStaff(void) {
                     }
                 }
             }
+
+            // SoH: no exact match, so let the microphone ocarina forgive a wrong, missing or extra note
+            if (sOcarinaFlags != 0 && sLastNoteFromMic && CVarGetInteger(CVAR_SETTING("CustomOcarina.Microphone"), 0)) {
+                AudioOcarina_TryLenientSongMatch();
+            }
         }
     }
 }
@@ -1915,6 +2040,7 @@ void AudioOcarina_PlayControllerInput(u8 unused) {
 
         // SoH: Microphone ocarina (hum/sing/play a real instrument)
         if (CVarGetInteger(CVAR_SETTING("CustomOcarina.Microphone"), 0)) {
+            MicOcarina_SetTolerant(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicTolerant"), 0));
             MicOcarina_Poll(CVarGetInteger(CVAR_SETTING("CustomOcarina.MicOctave"), 0),
                             CVarGetInteger(CVAR_SETTING("CustomOcarina.MicSensitivity"), 45),
                             CVarGetInteger(CVAR_SETTING("CustomOcarina.MicTuning"), 0));
@@ -1958,6 +2084,8 @@ void AudioOcarina_PlayControllerInput(u8 unused) {
                 }
             }
         }
+
+        sLastNoteFromMic = micNoteActive ? 1 : 0;
 
         // SoH
         u32 noteSharpBtnMap;

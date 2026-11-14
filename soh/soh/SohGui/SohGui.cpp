@@ -80,10 +80,17 @@ std::string GetWindowButtonText(const char* text, bool menuOpen) {
 
 // MARK: - Delegates
 
-// Always-visible window with no frame of its own: it only draws the microphone ocarina indicator on the screen.
+// Invisible, always-running window: it has no frame, title bar or close button. It only exists so that
+// the microphone ocarina indicator (light streaks and status icon) is drawn on the screen every frame.
+// Same pattern as OcarinaSongMenuWindow / InputViewer: Draw() is overridden to skip the default window frame.
 class MicOcarinaOverlayWindow final : public Ship::GuiWindow {
   public:
     using Ship::GuiWindow::GuiWindow;
+    // Ignores IsVisible() on purpose, so the indicator can never be hidden by closing a window,
+    // and does not sync the window's console variable.
+    void Draw() override {
+        DrawElement();
+    }
     void InitElement() override {
     }
     void UpdateElement() override {

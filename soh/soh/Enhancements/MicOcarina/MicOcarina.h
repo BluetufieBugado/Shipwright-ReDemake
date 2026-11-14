@@ -21,6 +21,10 @@ float MicOcarina_GetDebugHz(void);
 // Usado pelo indicador visual; vale 0 sempre que o microfone está fechado.
 float MicOcarina_GetLevel(void);
 
+// Modo tolerante: em vez de ignorar sons fora de D/F/A/B (Dó, Mi, Sol e sustenidos/bemóis), mapeia cada um
+// para a nota válida mais próxima. Ajuda com voz e violão. Pode ser chamada a qualquer momento.
+void MicOcarina_SetTolerant(int enabled);
+
 // Encerra tudo (também é registrado via atexit).
 void MicOcarina_Stop(void);
 
