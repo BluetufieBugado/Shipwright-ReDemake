@@ -5846,6 +5846,14 @@ void func_8083AA10(Player* this, PlayState* play) {
     }
 }
 
+// #region SOH [Enhancement] Third-person aiming for slingshot and bow (Remake / BOTW style)
+// Camera stays behind Link (free camera driven by right stick / mouse) and Link's aim follows the camera.
+static s32 Player_UseThirdPersonAim(Player* this) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && func_8002DD6C(this) &&
+           !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE);
+}
+// #endregion
+
 /**
  * Sets camera mode for first person, depending on what weapon is held if any.
  * (This causes the "flickering" with action swap with ranged items, as player
@@ -5867,6 +5875,12 @@ s32 func_8083AD4C(PlayState* play, Player* this) {
         }
         // Check if aiming camera mode should be overridden due to player settings
         GameInteractor_Should(VB_CHANGE_AIMING_CAMERA, true, &this->heldItemAction, &camMode);
+        // SOH [Enhancement] Third-person aim: use the "parallel" (Z-target without actor) camera instead.
+        // Only if the current camera setting allows it, otherwise keep the vanilla aiming camera.
+        if (Player_UseThirdPersonAim(this) &&
+            Camera_CheckValidMode(Play_GetCamera(play, CAM_ID_MAIN), CAM_MODE_TARGET) != 0) {
+            camMode = CAM_MODE_TARGET;
+        }
     } else {
         camMode = CAM_MODE_FIRST_PERSON;
     }
@@ -12625,6 +12639,13 @@ s16 func_8084ABD8(PlayState* play, Player* this, s32 arg2, s16 arg3) {
         }
         temp2 = CLAMP(temp2, -3000, 3000);
         this->actor.focus.rot.y += temp2;
+    } else if (Player_UseThirdPersonAim(this)) { // SOH [Enhancement] Third-person aim: aim follows the camera
+        Camera* aimCam = Play_GetCamera(play, CAM_ID_MAIN);
+
+        // focus.rot.x > 0 aims down (vanilla stick-up = aim down). If the aim ends up vertically inverted
+        // in game, drop the minus sign here.
+        this->actor.focus.rot.x = CLAMP(-Camera_GetCamDirPitch(aimCam), -14000, 14000);
+        this->actor.focus.rot.y = Camera_GetCamDirYaw(aimCam);
     } else { // First person with weapon
         // Y Axis
         temp1 = (this->stateFlags1 & PLAYER_STATE1_ON_HORSE) ? 3500 : 14000;

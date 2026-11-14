@@ -2150,6 +2150,15 @@ s32 Camera_Parallel1(Camera* camera) {
     f32 playerHeight;
     s32 pad3;
 
+    // SOH [Enhancement] Third-person aim (slingshot / bow): while aiming, behave as the free camera
+    // (right stick / mouse), keeping the camera behind Link instead of locking it to his facing direction.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && camera->player != NULL &&
+        (camera->player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) && camera->player->unk_6AD == 2) {
+        camera->play->manualCamera = true;
+        Camera_Free(camera);
+        return 1;
+    }
+
     playerHeight = Player_GetHeight(camera->player);
     if (RELOAD_PARAMS) {
         CameraModeValue* values = sCameraSettings[camera->setting].cameraModes[camera->mode].values;
