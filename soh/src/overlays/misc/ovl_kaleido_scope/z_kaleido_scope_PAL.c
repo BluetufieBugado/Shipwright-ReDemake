@@ -2428,7 +2428,8 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
             POLY_OPA_DISP = KaleidoScope_QuadTextureIA8(POLY_OPA_DISP, sToDecideTextures[gSaveContext.language],
                                                         D_8082ADE0[gSaveContext.language], 16, 4);
         } else if (pauseCtx->cursorSpecialPos != 0) {
-            if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0)) {
+            // Na aba Mapa em modo abas o ponto especial da esquerda e o foco da sidebar: sem o texto "To Select Item"
+            if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && !KaleidoScope_IsTabbedMapPage(pauseCtx)) {
                 pauseCtx->infoPanelVtx[16].v.ob[0] = pauseCtx->infoPanelVtx[18].v.ob[0] = -63;
 
                 pauseCtx->infoPanelVtx[17].v.ob[0] = pauseCtx->infoPanelVtx[19].v.ob[0] =
@@ -5621,7 +5622,7 @@ static void KaleidoScope_DrawQuestDetailPanel(PlayState* play) {
 }
 
 // ---- Sidebar da aba Mapa ----
-#define MAP_SIDEBAR_COUNT 3
+#define MAP_SIDEBAR_MAX_BUTTONS 4
 // Posicoes em unidades de tela (320x240). Para mover tudo mais para a esquerda/direita, mude so MAP_SIDEBAR_X.
 #define MAP_SIDEBAR_X 0
 #define MAP_SIDEBAR_W 104
@@ -5629,18 +5630,85 @@ static void KaleidoScope_DrawQuestDetailPanel(PlayState* play) {
 #define MAP_SIDEBAR_BTN_W 88
 #define MAP_SIDEBAR_BTN_H 28
 #define MAP_SIDEBAR_BTN_Y0 64
+#define MAP_SIDEBAR_BTN_Y0_CONFIRM 96 // na tela de confirmacao os botoes descem para dar lugar ao aviso
 #define MAP_SIDEBAR_BTN_STEP 38
+
+typedef enum {
+    MAP_SIDEBAR_VIEW_MAIN,    // Salvar / Carregar / Configuracoes
+    MAP_SIDEBAR_VIEW_SLOTS,   // Arquivo 1..3 / Voltar
+    MAP_SIDEBAR_VIEW_CONFIRM, // aviso + Carregar / Cancelar
+} MapSidebarView;
 
 typedef enum {
     MAP_SIDEBAR_SAVE,
     MAP_SIDEBAR_LOAD,
     MAP_SIDEBAR_SETTINGS,
-} MapSidebarButton;
+} MapSidebarMainButton;
 
 // Definida em soh/soh/SohGui/Menu.cpp (abre/fecha o menu do Ship, o mesmo do Esc)
 extern void SohGui_ToggleMenuFromPause(void);
 
+static s16 sMapSidebarView = MAP_SIDEBAR_VIEW_MAIN;
 static s16 sMapSidebarIndex = 0;
+static s16 sMapSidebarSlot = 0; // arquivo escolhido na tela de confirmacao
+
+static void KaleidoScope_MapSidebarSfx(u16 sfxId) {
+    Audio_PlaySfxGeneral(sfxId, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                         &gSfxDefaultReverb);
+}
+
+static void KaleidoScope_MapSidebarSetView(s16 view, s16 index) {
+    sMapSidebarView = view;
+    sMapSidebarIndex = index;
+}
+
+static s32 KaleidoScope_MapSidebarButtonCount(void) {
+    switch (sMapSidebarView) {
+        case MAP_SIDEBAR_VIEW_SLOTS:
+            return 4;
+        case MAP_SIDEBAR_VIEW_CONFIRM:
+            return 2;
+        default:
+            return 3;
+    }
+}
+
+// Preenche as texturas dos botoes da tela atual e devolve quantos sao
+static s32 KaleidoScope_MapSidebarGetLabels(u8** texs, s32* widths) {
+    switch (sMapSidebarView) {
+        case MAP_SIDEBAR_VIEW_SLOTS:
+            texs[0] = sSidebarTexFile1, widths[0] = SIDEBAR_TEX_FILE1_W;
+            texs[1] = sSidebarTexFile2, widths[1] = SIDEBAR_TEX_FILE2_W;
+            texs[2] = sSidebarTexFile3, widths[2] = SIDEBAR_TEX_FILE3_W;
+            texs[3] = sSidebarTexBack, widths[3] = SIDEBAR_TEX_BACK_W;
+            return 4;
+        case MAP_SIDEBAR_VIEW_CONFIRM:
+            texs[0] = sSidebarTexLoad, widths[0] = SIDEBAR_TEX_LOAD_W;
+            texs[1] = sSidebarTexCancel, widths[1] = SIDEBAR_TEX_CANCEL_W;
+            return 2;
+        default:
+            texs[0] = sSidebarTexSave, widths[0] = SIDEBAR_TEX_SAVE_W;
+            texs[1] = sSidebarTexLoad, widths[1] = SIDEBAR_TEX_LOAD_W;
+            texs[2] = sSidebarTexSettings, widths[2] = SIDEBAR_TEX_SETTINGS_W;
+            return 3;
+    }
+}
+
+// Slot com save valido e compativel com os arquivos de jogo instalados (mesma regra da selecao de arquivo)
+static bool KaleidoScope_MapSidebarSlotUsable(s32 slot) {
+    SaveFileMetaInfo* meta = Save_GetSaveMetaInfo(slot);
+
+    if (!meta->valid) {
+        return false;
+    }
+    if (meta->requiresMasterQuest && !ResourceMgr_GameHasMasterQuest()) {
+        return false;
+    }
+    if (meta->requiresOriginal && !ResourceMgr_GameHasOriginal()) {
+        return false;
+    }
+    return true;
+}
 
 // O foco da sidebar e o "ponto especial" da esquerda do mapa (onde ficava a seta de pagina). Entrar e sair dele ja
 // e tratado pelo z_kaleido_map_PAL.c: esquerda na borda do mapa entra, direita volta ao mapa.
@@ -5654,8 +5722,7 @@ static void KaleidoScope_MapSidebarOpenSavePrompt(PlayState* play) {
 
     pauseCtx->mode = 0;
     pauseCtx->promptChoice = 0;
-    Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    KaleidoScope_MapSidebarSfx(NA_SE_SY_DECIDE);
     gSaveContext.buttonStatus[0] = gSaveContext.buttonStatus[1] = gSaveContext.buttonStatus[2] =
         gSaveContext.buttonStatus[3] = BTN_DISABLED;
     gSaveContext.buttonStatus[4] = BTN_ENABLED;
@@ -5667,59 +5734,184 @@ static void KaleidoScope_MapSidebarOpenSavePrompt(PlayState* play) {
     pauseCtx->state = 7;
 }
 
+// Carrega outro arquivo e reinicia o jogo nele. Segue FileChoose_LoadGame (z_file_choose.c): o que muda e que aqui
+// quem encerra o PlayState atual e o proprio jogo em andamento.
+static void KaleidoScope_MapSidebarLoadSlot(PlayState* play, s32 slot) {
+    KaleidoScope_MapSidebarSfx(NA_SE_SY_FSEL_DECIDE_L);
+    Randomizer_WaitForGeneration();
+    gSaveContext.fileNum = slot;
+    gSaveContext.gameMode = GAMEMODE_NORMAL;
+
+    Sram_OpenSave();
+    SET_NEXT_GAMESTATE(&play->state, Play_Init, PlayState);
+    play->state.running = false;
+
+    gSaveContext.respawn[0].entranceIndex = ENTR_LOAD_OPENING;
+    gSaveContext.respawnFlag = 0;
+    gSaveContext.seqId = (u8)NA_BGM_DISABLED;
+    gSaveContext.natureAmbienceId = 0xFF;
+    gSaveContext.showTitleCard = true;
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("DogFollowsEverywhere"), 0)) {
+        gSaveContext.dogParams = 0;
+    }
+    gSaveContext.timerState = TIMER_STATE_OFF;
+    gSaveContext.subTimerState = SUBTIMER_STATE_OFF;
+    gSaveContext.eventInf[0] = 0;
+    gSaveContext.eventInf[1] = 0;
+    gSaveContext.eventInf[2] = 0;
+    gSaveContext.eventInf[3] = 0;
+    gSaveContext.prevHudVisibilityMode = 0x32;
+    gSaveContext.nayrusLoveTimer = 0;
+    gSaveContext.healthAccumulator = 0;
+    gSaveContext.magicState = MAGIC_STATE_IDLE;
+    gSaveContext.prevMagicState = MAGIC_STATE_IDLE;
+    gSaveContext.forcedSeqId = NA_BGM_GENERAL_SFX;
+    gSaveContext.skyboxTime = 0;
+    gSaveContext.nextTransitionType = TRANS_NEXT_TYPE_DEFAULT;
+    gSaveContext.nextCutsceneIndex = 0xFFEF;
+    gSaveContext.cutsceneTrigger = 0;
+    gSaveContext.chamberCutsceneNum = 0;
+    gSaveContext.nextDayTime = 0xFFFF;
+    gSaveContext.retainWeatherMode = 0;
+
+    for (int buttonIndex = 0; buttonIndex < ARRAY_COUNT(gSaveContext.buttonStatus); buttonIndex++) {
+        gSaveContext.buttonStatus[buttonIndex] = BTN_ENABLED;
+    }
+
+    gSaveContext.forceRisingButtonAlphas = gSaveContext.nextHudVisibilityMode = gSaveContext.hudVisibilityMode =
+        gSaveContext.hudVisibilityModeTimer = gSaveContext.magicCapacity = 0;
+
+    gSaveContext.magicFillTarget = gSaveContext.magic;
+    gSaveContext.magic = 0;
+    gSaveContext.magicLevel = gSaveContext.magic;
+
+    gSaveContext.naviTimer = 0;
+
+    GameInteractor_ExecuteOnLoadGame(gSaveContext.fileNum);
+
+    KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_MAIN, 0);
+}
+
+// B dentro da sidebar volta uma tela (em vez de abrir o prompt de salvar). Devolve true se tratou o B.
+static bool KaleidoScope_MapSidebarHandleBack(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+
+    if (!KaleidoScope_IsTabbedMapPage(pauseCtx) || !KaleidoScope_MapSidebarHasFocus(pauseCtx) ||
+        sMapSidebarView == MAP_SIDEBAR_VIEW_MAIN) {
+        return false;
+    }
+
+    if (sMapSidebarView == MAP_SIDEBAR_VIEW_CONFIRM) {
+        KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_SLOTS, sMapSidebarSlot);
+    } else {
+        KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_MAIN, MAP_SIDEBAR_LOAD);
+    }
+    KaleidoScope_MapSidebarSfx(NA_SE_SY_DECIDE);
+    return true;
+}
+
 static void KaleidoScope_MapSidebarUpdate(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
     bool dpad = CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0);
+    s32 count;
 
     if (!KaleidoScope_MapSidebarHasFocus(pauseCtx)) {
+        // O cursor voltou para o mapa: a proxima vez que entrar na sidebar comeca no menu principal
+        KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_MAIN, 0);
         return;
     }
+
+    count = KaleidoScope_MapSidebarButtonCount();
 
     if ((pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP))) {
         if (sMapSidebarIndex > 0) {
             sMapSidebarIndex--;
-            Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            KaleidoScope_MapSidebarSfx(NA_SE_SY_CURSOR);
         }
     } else if ((pauseCtx->stickRelY < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DDOWN))) {
-        if (sMapSidebarIndex < MAP_SIDEBAR_COUNT - 1) {
+        if (sMapSidebarIndex < count - 1) {
             sMapSidebarIndex++;
-            Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            KaleidoScope_MapSidebarSfx(NA_SE_SY_CURSOR);
         }
     }
 
-    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
-        switch (sMapSidebarIndex) {
-            case MAP_SIDEBAR_SAVE:
-                KaleidoScope_MapSidebarOpenSavePrompt(play);
-                break;
-            case MAP_SIDEBAR_LOAD:
-                // TODO: escolher entre os 3 slots e carregar (proxima etapa)
-                Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-                break;
-            case MAP_SIDEBAR_SETTINGS:
-                Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-                SohGui_ToggleMenuFromPause();
-                break;
-        }
+    if (!CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        return;
+    }
+
+    switch (sMapSidebarView) {
+        case MAP_SIDEBAR_VIEW_MAIN:
+            switch (sMapSidebarIndex) {
+                case MAP_SIDEBAR_SAVE:
+                    KaleidoScope_MapSidebarOpenSavePrompt(play);
+                    break;
+                case MAP_SIDEBAR_LOAD:
+                    KaleidoScope_MapSidebarSfx(NA_SE_SY_DECIDE);
+                    KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_SLOTS,
+                                                   (gSaveContext.fileNum >= 0 && gSaveContext.fileNum < 3)
+                                                       ? gSaveContext.fileNum
+                                                       : 0);
+                    break;
+                case MAP_SIDEBAR_SETTINGS:
+                    KaleidoScope_MapSidebarSfx(NA_SE_SY_DECIDE);
+                    SohGui_ToggleMenuFromPause();
+                    break;
+            }
+            break;
+
+        case MAP_SIDEBAR_VIEW_SLOTS:
+            if (sMapSidebarIndex == 3) { // Voltar
+                KaleidoScope_MapSidebarSfx(NA_SE_SY_DECIDE);
+                KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_MAIN, MAP_SIDEBAR_LOAD);
+            } else if (!KaleidoScope_MapSidebarSlotUsable(sMapSidebarIndex)) {
+                KaleidoScope_MapSidebarSfx(NA_SE_SY_ERROR); // slot vazio ou incompativel
+            } else {
+                KaleidoScope_MapSidebarSfx(NA_SE_SY_DECIDE);
+                sMapSidebarSlot = sMapSidebarIndex;
+                KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_CONFIRM, 1); // comeca em "Cancelar"
+            }
+            break;
+
+        case MAP_SIDEBAR_VIEW_CONFIRM:
+            if (sMapSidebarIndex == 0) {
+                KaleidoScope_MapSidebarLoadSlot(play, sMapSidebarSlot);
+            } else {
+                KaleidoScope_MapSidebarSfx(NA_SE_SY_DECIDE);
+                KaleidoScope_MapSidebarSetView(MAP_SIDEBAR_VIEW_SLOTS, sMapSidebarSlot);
+            }
+            break;
     }
 }
 
 static void KaleidoScope_DrawMapSidebar(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     u8 alpha = (pauseCtx->alpha > 255) ? 255 : (u8)pauseCtx->alpha;
-    u8* texs[MAP_SIDEBAR_COUNT] = { sSidebarTexSave, sSidebarTexLoad, sSidebarTexSettings };
-    s32 texW[MAP_SIDEBAR_COUNT] = { SIDEBAR_TEX_SAVE_W, SIDEBAR_TEX_LOAD_W, SIDEBAR_TEX_SETTINGS_W };
+    u8* texs[MAP_SIDEBAR_MAX_BUTTONS];
+    s32 texW[MAP_SIDEBAR_MAX_BUTTONS];
+    bool disabled[MAP_SIDEBAR_MAX_BUTTONS] = { false, false, false, false };
+    s32 count;
     s32 selected;
+    s32 y0Base;
     s32 i;
 
     KaleidoScope_MapSidebarUpdate(play);
-    // Destaca o botao so quando a sidebar tem o foco (depois da acao, o estado pode ter mudado)
+
+    // Se a acao acima encerrou o jogo (carregar arquivo), nao ha mais nada a desenhar
+    if (!play->state.running) {
+        return;
+    }
+
+    count = KaleidoScope_MapSidebarGetLabels(texs, texW);
+    // Destaca o botao so quando a sidebar tem o foco
     selected = KaleidoScope_MapSidebarHasFocus(pauseCtx) ? sMapSidebarIndex : -1;
+    y0Base = (sMapSidebarView == MAP_SIDEBAR_VIEW_CONFIRM) ? MAP_SIDEBAR_BTN_Y0_CONFIRM : MAP_SIDEBAR_BTN_Y0;
+
+    if (sMapSidebarView == MAP_SIDEBAR_VIEW_SLOTS) {
+        for (i = 0; i < 3; i++) {
+            disabled[i] = !KaleidoScope_MapSidebarSlotUsable(i);
+        }
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -5729,15 +5921,17 @@ static void KaleidoScope_DrawMapSidebar(PlayState* play) {
     KaleidoScope_TabBarFill(play, MAP_SIDEBAR_X, TAB_BAR_H + 10, MAP_SIDEBAR_X + MAP_SIDEBAR_W, SCREEN_HEIGHT - 16, 16,
                             12, 10, (u8)(alpha * 200 / 255));
 
-    for (i = 0; i < MAP_SIDEBAR_COUNT; i++) {
+    for (i = 0; i < count; i++) {
         s32 x0 = MAP_SIDEBAR_BTN_X;
-        s32 y0 = MAP_SIDEBAR_BTN_Y0 + i * MAP_SIDEBAR_BTN_STEP;
+        s32 y0 = y0Base + i * MAP_SIDEBAR_BTN_STEP;
         s32 x1 = x0 + MAP_SIDEBAR_BTN_W;
         s32 y1 = y0 + MAP_SIDEBAR_BTN_H;
 
         if (i == selected) {
             KaleidoScope_TabBarFill(play, x0, y0, x1, y1, 92, 68, 40, alpha);
             KaleidoScope_TabBarFill(play, x0, y0, x0 + 3, y1, 236, 200, 116, alpha); // barra dourada
+        } else if (disabled[i]) {
+            KaleidoScope_TabBarFill(play, x0, y0, x1, y1, 28, 22, 18, alpha);
         } else {
             KaleidoScope_TabBarFill(play, x0, y0, x1, y1, 46, 34, 24, alpha);
         }
@@ -5745,6 +5939,11 @@ static void KaleidoScope_DrawMapSidebar(PlayState* play) {
         KaleidoScope_TabBarFill(play, x0, y0, x1, y0 + 1, 120, 92, 52, alpha);
         KaleidoScope_TabBarFill(play, x0, y1 - 1, x1, y1, 120, 92, 52, alpha);
         KaleidoScope_TabBarFill(play, x1 - 1, y0, x1, y1, 120, 92, 52, alpha);
+
+        // Marcador dourado no arquivo que esta em uso agora
+        if (sMapSidebarView == MAP_SIDEBAR_VIEW_SLOTS && i < 3 && i == gSaveContext.fileNum) {
+            KaleidoScope_TabBarFill(play, x1 - 12, y0 + 11, x1 - 6, y0 + 17, 236, 200, 116, alpha);
+        }
     }
     gDPPipeSync(POLY_OPA_DISP++);
 
@@ -5753,14 +5952,24 @@ static void KaleidoScope_DrawMapSidebar(PlayState* play) {
                       TEXEL0, 0, PRIMITIVE, 0);
     gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
 
-    for (i = 0; i < MAP_SIDEBAR_COUNT; i++) {
+    for (i = 0; i < count; i++) {
         s32 x = MAP_SIDEBAR_BTN_X + 10;
-        s32 y = MAP_SIDEBAR_BTN_Y0 + i * MAP_SIDEBAR_BTN_STEP + (MAP_SIDEBAR_BTN_H - TAB_TEX_H / 4) / 2;
+        s32 y = y0Base + i * MAP_SIDEBAR_BTN_STEP + (MAP_SIDEBAR_BTN_H - TAB_TEX_H / 4) / 2;
         if (i == selected) {
             KaleidoScope_TabBarText(play, texs[i], texW[i], x, y, 255, 244, 214, alpha);
+        } else if (disabled[i]) {
+            KaleidoScope_TabBarText(play, texs[i], texW[i], x, y, 100, 88, 72, alpha);
         } else {
             KaleidoScope_TabBarText(play, texs[i], texW[i], x, y, 190, 176, 146, alpha);
         }
+    }
+
+    // Aviso da tela de confirmacao
+    if (sMapSidebarView == MAP_SIDEBAR_VIEW_CONFIRM) {
+        KaleidoScope_TabBarText(play, sSidebarTexWarn1, SIDEBAR_TEX_WARN1_W, MAP_SIDEBAR_BTN_X + 2, 58, 236, 200, 116,
+                                alpha);
+        KaleidoScope_TabBarText(play, sSidebarTexWarn2, SIDEBAR_TEX_WARN2_W, MAP_SIDEBAR_BTN_X + 2, 70, 236, 200, 116,
+                                alpha);
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -6646,7 +6855,7 @@ void KaleidoScope_Update(PlayState* play) {
                         pauseCtx->state = 0x12;
                         WREG(2) = -6240;
                         func_800F64E0(0);
-                    } else if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+                    } else if (CHECK_BTN_ALL(input->press.button, BTN_B) && !KaleidoScope_MapSidebarHandleBack(play)) {
                         pauseCtx->mode = 0;
                         pauseCtx->promptChoice = 0;
                         Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
