@@ -12825,7 +12825,7 @@ static void Player_ThirdPersonAimMove(Player* this, PlayState* play) {
     this->unk_6AD = savedAimMode;
 
     if (hasStickInput) {
-        speedTarget *= CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimSpeed"), 0.4f);
+        speedTarget *= CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimSpeed"), 0.5f);
         Math_StepToF(&this->linearVelocity, speedTarget, 1.5f);
         this->yaw = yawTarget;
 
@@ -12836,10 +12836,41 @@ static void Player_ThirdPersonAimMove(Player* this, PlayState* play) {
         // Keep sliding in the last direction while slowing down, then face forward again
         if (Player_DecelerateToZero(this)) {
             this->yaw = this->actor.shape.rot.y;
+
+            if (this->skelAnime.animation == walkAnim) {
+                Player_AnimPlayLoop(play, this, Player_GetIdleAnim(this));
+            }
+        }
+    }
+
+    // The first-person action never advances `skelAnime` by itself, which left the legs frozen. While walking
+    // (or still sliding to a stop) advance the side-walk animation like Player_Action_80840DE4 does, with the
+    // playback speed following Link's speed.
+    if (this->skelAnime.animation == walkAnim) {
+        f32 frames;
+        f32 coeff;
+        s32 direction;
+
+        if (walkAnim == &gPlayerAnim_link_bow_side_walk) {
+            frames = 24.0f;
+            coeff = -1.0f;
+        } else {
+            frames = 29.0f;
+            coeff = 1.0f;
         }
 
-        if (this->skelAnime.animation == walkAnim) {
-            Player_AnimPlayLoop(play, this, Player_GetIdleAnim(this));
+        this->skelAnime.mode = 0;
+        LinkAnimation_SetUpdateFunction(&this->skelAnime);
+        this->skelAnime.animLength = frames;
+        this->skelAnime.endFrame = frames - 1.0f;
+
+        direction = ((s16)(this->yaw - this->actor.shape.rot.y) >= 0) ? 1 : -1;
+        this->skelAnime.playSpeed = direction * (this->linearVelocity * coeff);
+
+        LinkAnimation_Update(play, &this->skelAnime);
+
+        if (LinkAnimation_OnFrame(&this->skelAnime, 0.0f) || LinkAnimation_OnFrame(&this->skelAnime, frames * 0.5f)) {
+            Player_PlaySteppingSfx(this, this->linearVelocity);
         }
     }
 }
