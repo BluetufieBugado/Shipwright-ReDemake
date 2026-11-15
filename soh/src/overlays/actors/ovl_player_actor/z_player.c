@@ -5852,6 +5852,22 @@ static s32 Player_UseThirdPersonAim(Player* this) {
     return CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && func_8002DD6C(this) &&
            !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE);
 }
+
+// SOH [Enhancement] Third-person aim: read by the on-screen reticle (soh/Enhancements/ThirdPersonAim).
+// True while Link is aiming with the third-person aim, and never while the game is paused.
+extern PlayState* gPlayState;
+
+u8 Player_IsThirdPersonAiming(void) {
+    Player* player;
+
+    if ((gPlayState == NULL) || (gPlayState->pauseCtx.state != 0)) {
+        return 0;
+    }
+
+    player = GET_PLAYER(gPlayState);
+
+    return (player != NULL) && Player_UseThirdPersonAim(player) && (player->unk_6AD == 2) && (player->csAction == 0);
+}
 // #endregion
 
 /**

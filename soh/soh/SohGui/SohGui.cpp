@@ -45,6 +45,7 @@
 #include "soh/SohGui/SohModals.h"
 #include "soh/Enhancements/OcarinaSongMenu/OcarinaSongMenu.h"
 #include "soh/Enhancements/MicOcarina/MicOcarinaOverlay.h"
+#include "soh/Enhancements/ThirdPersonAim/ThirdPersonAimReticle.h"
 
 namespace SohGui {
 
@@ -142,6 +143,31 @@ std::shared_ptr<AnchorRoomWindow> mAnchorRoomWindow;
 std::shared_ptr<OcarinaSongMenuWindow> mOcarinaSongMenuWindow;
 std::shared_ptr<MicOcarinaOverlayWindow> mMicOcarinaOverlayWindow;
 
+// Invisible, always-running window (same pattern as MicOcarinaOverlayWindow): Draw() is overridden and never calls
+// ImGui::Begin, so there is no frame, title bar or close button. It only exists so that the third-person aim
+// reticle is drawn on the screen every frame, through the foreground draw list.
+class ThirdPersonAimReticleWindow final : public Ship::GuiWindow {
+  public:
+    using Ship::GuiWindow::GuiWindow;
+    void Draw() override {
+        DrawElement();
+    }
+    void InitElement() override {
+    }
+    void UpdateElement() override {
+    }
+    void DrawElement() override {
+        const bool enabled = CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) != 0 &&
+                             CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimReticle"), 1) != 0;
+        const bool menuOpen = mSohMenu != nullptr && mSohMenu->IsVisible();
+        const bool aiming = enabled && !menuOpen && Player_IsThirdPersonAiming() != 0;
+        ThirdPersonAimReticle_Draw(aiming, CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimReticleSize"), 1.6f),
+                                   CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimReticleOpacity"), 0.9f));
+    }
+};
+
+std::shared_ptr<ThirdPersonAimReticleWindow> mThirdPersonAimReticleWindow;
+
 UIWidgets::Colors GetMenuThemeColor() {
     return mSohMenu->GetMenuThemeColor();
 }
@@ -185,6 +211,7 @@ std::vector<std::shared_ptr<Ship::GuiWindow>> GetAllGuiWindows() {
         mAnchorRoomWindow,
         mOcarinaSongMenuWindow,
         mMicOcarinaOverlayWindow,
+        mThirdPersonAimReticleWindow,
         // Registered outside SohGui.
         gui->GetGuiWindow("Configure Controller"),
         gui->GetGuiWindow("Console"),
@@ -310,6 +337,10 @@ void SetupGuiElements() {
         std::make_shared<MicOcarinaOverlayWindow>(CVAR_WINDOW("MicOcarinaOverlay"), "Microphone Ocarina Indicator");
     gui->AddGuiWindow(mMicOcarinaOverlayWindow);
     mMicOcarinaOverlayWindow->Show();
+    mThirdPersonAimReticleWindow = std::make_shared<ThirdPersonAimReticleWindow>(CVAR_WINDOW("ThirdPersonAimReticle"),
+                                                                                 "Third Person Aim Reticle");
+    gui->AddGuiWindow(mThirdPersonAimReticleWindow);
+    mThirdPersonAimReticleWindow->Show();
 }
 
 void Destroy() {
@@ -349,6 +380,7 @@ void Destroy() {
     mAnchorRoomWindow = nullptr;
     mOcarinaSongMenuWindow = nullptr;
     mMicOcarinaOverlayWindow = nullptr;
+    mThirdPersonAimReticleWindow = nullptr;
 }
 
 void RegisterPopup(std::string title, std::string message, std::string button1, std::string button2,
