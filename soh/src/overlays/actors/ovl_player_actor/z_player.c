@@ -6029,6 +6029,16 @@ static void Player_ThirdPersonAimConverge(Player* this, PlayState* play, Camera*
 // would turn with it. The deviation is applied only to the pose of Link's upper body, which is what the arrow
 // and the seed take their direction from. The parallax is small here, so the limit is ~11 degrees.
 static void Player_FirstPersonAimDeviation(Player* this, PlayState* play, s16* yawDev, s16* pitchDev) {
+    // SOH [Enhancement] Horseback: the riding animation moves Link's torso while Epona runs, so the arrow does not
+    // leave exactly along the pose we ask for. Here the deviation is a feedback loop: each frame we compare the
+    // direction the nocked arrow actually points (its world.rot, taken from the bow hand) with the direction that
+    // reaches the point under the reticle, and correct the deviation by the difference.
+    static struct {
+        Actor* arrow;
+        u32 frame;
+        s16 yaw;
+        s16 pitch;
+    } sHorseAimLoop = { NULL, 0, 0, 0 };
     Camera* aimCam = Play_GetCamera(play, CAM_ID_MAIN);
     s16 yaw;
     s16 pitch;
@@ -6039,6 +6049,29 @@ static void Player_FirstPersonAimDeviation(Player* this, PlayState* play, s16* y
     if (Player_AimConvergeAngles(this, play, aimCam, 0x0800, &yaw, &pitch)) {
         *yawDev = (s16)(yaw - Camera_GetCamDirYaw(aimCam));
         *pitchDev = (s16)(pitch - Math_Vec3f_Pitch(&aimCam->eye, &aimCam->at));
+
+        if ((this->stateFlags1 & PLAYER_STATE1_ON_HORSE) && (this->heldActor != NULL) &&
+            (this->heldActor->id == ACTOR_EN_ARROW) &&
+            CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimHorseLoop"), 1)) {
+            Actor* arrow = this->heldActor;
+
+            if ((sHorseAimLoop.arrow == arrow) && ((play->gameplayFrames - sHorseAimLoop.frame) <= 2)) {
+                s16 errYaw = (s16)(yaw - arrow->world.rot.y);
+                s16 errPitch = (s16)(pitch - arrow->world.rot.x);
+
+                *yawDev = CLAMP((s32)sHorseAimLoop.yaw + (s32)(errYaw * 0.8f), -0x2000, 0x2000);
+                *pitchDev = CLAMP((s32)sHorseAimLoop.pitch + (s32)(errPitch * 0.8f), -0x2000, 0x2000);
+            }
+
+            sHorseAimLoop.arrow = arrow;
+            sHorseAimLoop.frame = play->gameplayFrames;
+            sHorseAimLoop.yaw = *yawDev;
+            sHorseAimLoop.pitch = *pitchDev;
+        } else {
+            sHorseAimLoop.arrow = NULL;
+        }
+    } else {
+        sHorseAimLoop.arrow = NULL;
     }
 }
 // #endregion
