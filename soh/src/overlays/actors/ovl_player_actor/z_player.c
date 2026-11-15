@@ -5848,7 +5848,16 @@ void func_8083AA10(Player* this, PlayState* play) {
 
 // #region SOH [Enhancement] Third-person aiming for slingshot and bow (Remake / BOTW style)
 // Camera stays behind Link (free camera driven by right stick / mouse) and Link's aim follows the camera.
+extern PlayState* gPlayState;
+
 static s32 Player_UseThirdPersonAim(Player* this) {
+    // Shooting gallery (Market / Kakariko): keep the vanilla aiming there, the third-person camera
+    // locks up in that room. Set ThirdPersonAimGallery to 1 to force third-person aim in the gallery.
+    if ((gPlayState != NULL) && (gPlayState->shootingGalleryStatus != 0) &&
+        !CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimGallery"), 0)) {
+        return 0;
+    }
+
     return CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && func_8002DD6C(this) &&
            !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE);
 }

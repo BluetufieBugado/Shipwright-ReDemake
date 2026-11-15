@@ -2179,6 +2179,7 @@ s32 Camera_Parallel1(Camera* camera) {
     // SOH [Enhancement] Third-person aim (slingshot / bow): while aiming, behave as the free camera
     // (right stick / mouse), keeping the camera behind Link instead of locking it to his facing direction.
     if (CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && camera->player != NULL &&
+        (camera->play->shootingGalleryStatus == 0 || CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimGallery"), 0)) &&
         (camera->player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) && camera->player->unk_6AD == 2) {
         camera->play->manualCamera = true;
         sFreeCamShoulderAim = true;
