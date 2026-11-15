@@ -5862,6 +5862,23 @@ static s32 Player_UseThirdPersonAim(Player* this) {
            !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE);
 }
 
+// SOH [Enhancement] First-person aim assist: the places where the game keeps its own first-person aim
+// (shooting gallery and aiming a bow from horseback) also get the on-screen reticle and the shot correction.
+// Needs ThirdPersonAim on (master switch); ThirdPersonAimFirstPerson turns just this part off.
+static s32 Player_UseFirstPersonAimAssist(Player* this) {
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) ||
+        !CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimFirstPerson"), 1) || !func_8002DD6C(this) ||
+        Player_UseThirdPersonAim(this)) {
+        return 0;
+    }
+
+    if ((gPlayState != NULL) && (gPlayState->shootingGalleryStatus != 0)) {
+        return 1;
+    }
+
+    return (this->stateFlags1 & PLAYER_STATE1_ON_HORSE) ? 1 : 0;
+}
+
 // SOH [Enhancement] Third-person aim: read by the on-screen reticle (soh/Enhancements/ThirdPersonAim).
 // True while Link is aiming with the third-person aim, and never while the game is paused.
 extern PlayState* gPlayState;
@@ -5875,16 +5892,19 @@ u8 Player_IsThirdPersonAiming(void) {
 
     player = GET_PLAYER(gPlayState);
 
-    return (player != NULL) && Player_UseThirdPersonAim(player) && (player->unk_6AD == 2) && (player->csAction == 0);
+    return (player != NULL) && (Player_UseThirdPersonAim(player) || Player_UseFirstPersonAimAssist(player)) &&
+           (player->unk_6AD == 2) && (player->csAction == 0);
 }
 
 // SOH [Enhancement] Third-person aim: makes the shot land on the point under the reticle (center of the screen).
 // The camera sits over Link's shoulder, so a shot fired parallel to the camera lands to the right of the reticle.
 // This casts a ray from the camera through the center of the screen, finds what it hits (level geometry, or the
 // first enemy / targetable actor close to the ray) and aims from where the shot starts toward that point.
-static void Player_ThirdPersonAimConverge(Player* this, PlayState* play, Camera* aimCam) {
+// Returns 0 when there is nothing to correct, otherwise the yaw / pitch (focus.rot convention) that sends the shot to
+// the point under the reticle, never turning more than maxDeviation away from the camera direction.
+static s32 Player_AimConvergeAngles(Player* this, PlayState* play, Camera* aimCam, s16 maxDeviation, s16* outYaw,
+                                    s16* outPitch) {
     static const u8 sCategories[] = { ACTORCAT_ENEMY, ACTORCAT_BOSS, ACTORCAT_PROP, ACTORCAT_NPC, ACTORCAT_MISC };
-    const s16 maxDeviation = 0x1800; // never turn more than ~34 degrees away from the camera direction
     Vec3f eye = aimCam->eye;
     Vec3f dir;
     Vec3f origin;
@@ -5910,7 +5930,7 @@ static void Player_ThirdPersonAimConverge(Player* this, PlayState* play, Camera*
     dir.z = aimCam->at.z - eye.z;
     len = sqrtf(SQ(dir.x) + SQ(dir.y) + SQ(dir.z));
     if (len < 1.0f) {
-        return;
+        return 0;
     }
     dir.x /= len;
     dir.y /= len;
@@ -5934,7 +5954,7 @@ static void Player_ThirdPersonAimConverge(Player* this, PlayState* play, Camera*
         tMin = 0.0f;
     }
     if (tMin >= range) {
-        return;
+        return 0;
     }
     tBest = range;
 
@@ -5988,8 +6008,38 @@ static void Player_ThirdPersonAimConverge(Player* this, PlayState* play, Camera*
     yaw = Math_Vec3f_Yaw(&origin, &target);
     pitch = Math_Vec3f_Pitch(&origin, &target);
 
-    this->actor.focus.rot.y = camYaw + CLAMP((s16)(yaw - camYaw), -maxDeviation, maxDeviation);
-    this->actor.focus.rot.x = CLAMP(camPitch + CLAMP((s16)(pitch - camPitch), -maxDeviation, maxDeviation), -14000, 14000);
+    *outYaw = camYaw + CLAMP((s16)(yaw - camYaw), -maxDeviation, maxDeviation);
+    *outPitch = CLAMP(camPitch + CLAMP((s16)(pitch - camPitch), -maxDeviation, maxDeviation), -14000, 14000);
+    return 1;
+}
+
+static void Player_ThirdPersonAimConverge(Player* this, PlayState* play, Camera* aimCam) {
+    s16 yaw;
+    s16 pitch;
+
+    // never turn more than ~34 degrees away from the camera direction
+    if (Player_AimConvergeAngles(this, play, aimCam, 0x1800, &yaw, &pitch)) {
+        this->actor.focus.rot.y = yaw;
+        this->actor.focus.rot.x = pitch;
+    }
+}
+
+// SOH [Enhancement] First-person aim assist: how far the shot has to turn away from where the camera looks.
+// In first person the camera follows Link's aim (focus.rot), so the aim itself must stay untouched or the camera
+// would turn with it. The deviation is applied only to the pose of Link's upper body, which is what the arrow
+// and the seed take their direction from. The parallax is small here, so the limit is ~11 degrees.
+static void Player_FirstPersonAimDeviation(Player* this, PlayState* play, s16* yawDev, s16* pitchDev) {
+    Camera* aimCam = Play_GetCamera(play, CAM_ID_MAIN);
+    s16 yaw;
+    s16 pitch;
+
+    *yawDev = 0;
+    *pitchDev = 0;
+
+    if (Player_AimConvergeAngles(this, play, aimCam, 0x0800, &yaw, &pitch)) {
+        *yawDev = (s16)(yaw - Camera_GetCamDirYaw(aimCam));
+        *pitchDev = (s16)(pitch - Math_Vec3f_Pitch(&aimCam->eye, &aimCam->at));
+    }
 }
 // #endregion
 
@@ -12832,7 +12882,24 @@ s16 func_8084ABD8(PlayState* play, Player* this, s32 arg2, s16 arg3) {
     }
 
     this->unk_6AE_rotFlags |= UNK6AE_ROT_FOCUS_Y;
-    return func_80836AB8(this, (play->shootingGalleryStatus != 0) || func_8002DD78(this) || func_808334B4(this)) - arg3;
+
+    {
+        s32 poseFromFocus = (play->shootingGalleryStatus != 0) || func_8002DD78(this) || func_808334B4(this);
+        s16 aimYaw = func_80836AB8(this, poseFromFocus);
+
+        // SOH [Enhancement] First-person aim assist (shooting gallery, bow on horseback): shot lands under the reticle
+        if (poseFromFocus && (arg2 != 0) && Player_UseFirstPersonAimAssist(this) &&
+            CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimParallax"), 1)) {
+            s16 yawDev;
+            s16 pitchDev;
+
+            Player_FirstPersonAimDeviation(this, play, &yawDev, &pitchDev);
+            this->upperLimbRot.x += pitchDev;
+            aimYaw += yawDev;
+        }
+
+        return aimYaw - arg3;
+    }
 }
 
 void func_8084AEEC(Player* this, f32* arg1, f32 arg2, s16 arg3) {
