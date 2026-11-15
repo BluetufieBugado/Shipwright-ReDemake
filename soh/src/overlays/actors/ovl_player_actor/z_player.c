@@ -5868,6 +5868,120 @@ u8 Player_IsThirdPersonAiming(void) {
 
     return (player != NULL) && Player_UseThirdPersonAim(player) && (player->unk_6AD == 2) && (player->csAction == 0);
 }
+
+// SOH [Enhancement] Third-person aim: makes the shot land on the point under the reticle (center of the screen).
+// The camera sits over Link's shoulder, so a shot fired parallel to the camera lands to the right of the reticle.
+// This casts a ray from the camera through the center of the screen, finds what it hits (level geometry, or the
+// first enemy / targetable actor close to the ray) and aims from where the shot starts toward that point.
+static void Player_ThirdPersonAimConverge(Player* this, PlayState* play, Camera* aimCam) {
+    static const u8 sCategories[] = { ACTORCAT_ENEMY, ACTORCAT_BOSS, ACTORCAT_PROP, ACTORCAT_NPC, ACTORCAT_MISC };
+    const s16 maxDeviation = 0x1800; // never turn more than ~34 degrees away from the camera direction
+    Vec3f eye = aimCam->eye;
+    Vec3f dir;
+    Vec3f origin;
+    Vec3f rayStart;
+    Vec3f rayEnd;
+    Vec3f hit;
+    Vec3f target;
+    CollisionPoly* poly;
+    s32 bgId;
+    f32 range;
+    f32 len;
+    f32 tMin;
+    f32 tBest;
+    s16 camYaw;
+    s16 camPitch;
+    s16 yaw;
+    s16 pitch;
+    s32 i;
+    Actor* actor;
+
+    dir.x = aimCam->at.x - eye.x;
+    dir.y = aimCam->at.y - eye.y;
+    dir.z = aimCam->at.z - eye.z;
+    len = sqrtf(SQ(dir.x) + SQ(dir.y) + SQ(dir.z));
+    if (len < 1.0f) {
+        return;
+    }
+    dir.x /= len;
+    dir.y /= len;
+    dir.z /= len;
+
+    // Where the shot starts: the arrow / seed Link is holding, or his hand while nothing is loaded yet.
+    if (this->heldActor != NULL) {
+        origin = this->heldActor->world.pos;
+    } else {
+        origin = this->bodyPartsPos[PLAYER_BODYPART_R_HAND];
+    }
+
+    range = CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimParallaxRange"), 3000.0f);
+    if (range < 200.0f) {
+        range = 200.0f;
+    }
+
+    // Only things in front of where the shot starts count (the camera is behind Link).
+    tMin = ((origin.x - eye.x) * dir.x) + ((origin.y - eye.y) * dir.y) + ((origin.z - eye.z) * dir.z) + 30.0f;
+    if (tMin < 0.0f) {
+        tMin = 0.0f;
+    }
+    if (tMin >= range) {
+        return;
+    }
+    tBest = range;
+
+    // Level geometry: same test that arrows and seeds use to hit walls and floors.
+    rayStart.x = eye.x + dir.x * tMin;
+    rayStart.y = eye.y + dir.y * tMin;
+    rayStart.z = eye.z + dir.z * tMin;
+    rayEnd.x = eye.x + dir.x * range;
+    rayEnd.y = eye.y + dir.y * range;
+    rayEnd.z = eye.z + dir.z * range;
+    if (BgCheck_ProjectileLineTest(&play->colCtx, &rayStart, &rayEnd, &hit, &poly, true, true, true, true, &bgId)) {
+        tBest = sqrtf(SQ(hit.x - eye.x) + SQ(hit.y - eye.y) + SQ(hit.z - eye.z));
+    }
+
+    // Actors: enemies and bosses always, anything else only if the game lets Link target it.
+    for (i = 0; i < ARRAY_COUNT(sCategories); i++) {
+        for (actor = play->actorCtx.actorLists[sCategories[i]].head; actor != NULL; actor = actor->next) {
+            f32 dx;
+            f32 dy;
+            f32 dz;
+            f32 t;
+
+            if ((actor == &this->actor) || (actor == this->heldActor) || (actor->update == NULL)) {
+                continue;
+            }
+            if ((i >= 2) && !(actor->flags & ACTOR_FLAG_ATTENTION_ENABLED)) {
+                continue;
+            }
+
+            dx = actor->focus.pos.x - eye.x;
+            dy = actor->focus.pos.y - eye.y;
+            dz = actor->focus.pos.z - eye.z;
+            t = (dx * dir.x) + (dy * dir.y) + (dz * dir.z);
+            if ((t < tMin) || (t >= tBest)) {
+                continue;
+            }
+            // closest the ray gets to the actor's focus point must be within ~30 units
+            if ((SQ(dx) + SQ(dy) + SQ(dz) - SQ(t)) < SQ(30.0f)) {
+                tBest = t;
+            }
+        }
+    }
+
+    target.x = eye.x + dir.x * tBest;
+    target.y = eye.y + dir.y * tBest;
+    target.z = eye.z + dir.z * tBest;
+
+    // Same angle convention as the rest of this file: focus.rot.x > 0 aims down.
+    camYaw = Camera_GetCamDirYaw(aimCam);
+    camPitch = Math_Vec3f_Pitch(&eye, &aimCam->at);
+    yaw = Math_Vec3f_Yaw(&origin, &target);
+    pitch = Math_Vec3f_Pitch(&origin, &target);
+
+    this->actor.focus.rot.y = camYaw + CLAMP((s16)(yaw - camYaw), -maxDeviation, maxDeviation);
+    this->actor.focus.rot.x = CLAMP(camPitch + CLAMP((s16)(pitch - camPitch), -maxDeviation, maxDeviation), -14000, 14000);
+}
 // #endregion
 
 /**
@@ -12662,6 +12776,11 @@ s16 func_8084ABD8(PlayState* play, Player* this, s32 arg2, s16 arg3) {
         // in game, drop the minus sign here.
         this->actor.focus.rot.x = CLAMP(-Camera_GetCamDirPitch(aimCam), -14000, 14000);
         this->actor.focus.rot.y = Camera_GetCamDirYaw(aimCam);
+
+        // Make the shot land under the reticle instead of parallel to the camera (see the function above).
+        if (CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimParallax"), 1)) {
+            Player_ThirdPersonAimConverge(this, play, aimCam);
+        }
     } else { // First person with weapon
         // Y Axis
         temp1 = (this->stateFlags1 & PLAYER_STATE1_ON_HORSE) ? 3500 : 14000;
