@@ -226,7 +226,7 @@ void SohMenu::AddMenuEnhancements() {
 
     AddWidget(path, "Better Save Menu", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("BetterSaveMenu"))
-        .Options(CheckboxOptions().Tooltip(
+       .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Replaces the authentic save menu with a textbox that asks Yes or No for saving,\n"
             "then asks if you want to Continue, Reset, or Reset to Spawn."));
 

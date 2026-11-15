@@ -16,7 +16,7 @@ extern PlayState* gPlayState;
 }
 
 #define CVAR_BETTERSAVE CVAR_ENHANCEMENT("BetterSaveMenu")
-#define CVAR_BETTERSAVE_DEFAULT 0
+#define CVAR_BETTERSAVE_DEFAULT 1
 #define CVAR_BETTERSAVE_VALUE CVarGetInteger(CVAR_BETTERSAVE, CVAR_BETTERSAVE_DEFAULT)
 static CustomMessage saveMsg = CustomMessage(
     "\x08Would you like to save?&&" + CustomMessage::TWO_WAY_CHOICE() + "%gYes&No%w\x09", TEXTBOX_TYPE_BLUE);

@@ -1,0 +1,190 @@
+--- a/soh/src/overlays/actors/ovl_player_actor/z_player.c	2026-11-14 19:31:06.063029710 +0000
++++ b/soh/src/overlays/actors/ovl_player_actor/z_player.c	2026-11-15 01:12:09.387089033 +0000
+@@ -5846,6 +5846,14 @@
+     }
+ }
+ 
++// #region SOH [Enhancement] Third-person aiming for slingshot and bow (Remake / BOTW style)
++// Camera stays behind Link (free camera driven by right stick / mouse) and Link's aim follows the camera.
++static s32 Player_UseThirdPersonAim(Player* this) {
++    return CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && func_8002DD6C(this) &&
++           !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE);
++}
++// #endregion
++
+ /**
+  * Sets camera mode for first person, depending on what weapon is held if any.
+  * (This causes the "flickering" with action swap with ranged items, as player
+@@ -5867,6 +5875,12 @@
+         }
+         // Check if aiming camera mode should be overridden due to player settings
+         GameInteractor_Should(VB_CHANGE_AIMING_CAMERA, true, &this->heldItemAction, &camMode);
++        // SOH [Enhancement] Third-person aim: use the "parallel" (Z-target without actor) camera instead.
++        // Only if the current camera setting allows it, otherwise keep the vanilla aiming camera.
++        if (Player_UseThirdPersonAim(this) &&
++            Camera_CheckValidMode(Play_GetCamera(play, CAM_ID_MAIN), CAM_MODE_TARGET) != 0) {
++            camMode = CAM_MODE_TARGET;
++        }
+     } else {
+         camMode = CAM_MODE_FIRST_PERSON;
+     }
+@@ -12625,6 +12639,13 @@
+         }
+         temp2 = CLAMP(temp2, -3000, 3000);
+         this->actor.focus.rot.y += temp2;
++    } else if (Player_UseThirdPersonAim(this)) { // SOH [Enhancement] Third-person aim: aim follows the camera
++        Camera* aimCam = Play_GetCamera(play, CAM_ID_MAIN);
++
++        // focus.rot.x > 0 aims down (vanilla stick-up = aim down). If the aim ends up vertically inverted
++        // in game, drop the minus sign here.
++        this->actor.focus.rot.x = CLAMP(-Camera_GetCamDirPitch(aimCam), -14000, 14000);
++        this->actor.focus.rot.y = Camera_GetCamDirYaw(aimCam);
+     } else { // First person with weapon
+         // Y Axis
+         temp1 = (this->stateFlags1 & PLAYER_STATE1_ON_HORSE) ? 3500 : 14000;
+@@ -12788,12 +12809,49 @@
+     LinkAnimation_Update(play, &this->skelAnime);
+ }
+ 
++// SOH [Enhancement] Third-person aim: Link can walk while aiming. He always faces where the camera points
++// (see func_8084ABD8) and moves relative to the camera with the left stick, using the bow side-walk animation.
++static void Player_ThirdPersonAimMove(Player* this, PlayState* play) {
++    f32 speedTarget;
++    s16 yawTarget;
++    LinkAnimationHeader* walkAnim = func_8083356C(this);
++    s32 hasStickInput;
++    s32 savedAimMode = this->unk_6AD;
++
++    // Player_CalcSpeedAndYawFromControlStick forces speed 0 whenever unk_6AD != 0 (any item-aiming state),
++    // so read the stick as if Link was not aiming, then restore the state.
++    this->unk_6AD = 0;
++    hasStickInput = Player_GetMovementSpeedAndYaw(this, &speedTarget, &yawTarget, SPEED_MODE_LINEAR, play);
++    this->unk_6AD = savedAimMode;
++
++    if (hasStickInput) {
++        speedTarget *= CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimSpeed"), 0.4f);
++        Math_StepToF(&this->linearVelocity, speedTarget, 1.5f);
++        this->yaw = yawTarget;
++
++        if (this->skelAnime.animation != walkAnim) {
++            Player_AnimPlayLoop(play, this, walkAnim);
++        }
++    } else {
++        // Keep sliding in the last direction while slowing down, then face forward again
++        if (Player_DecelerateToZero(this)) {
++            this->yaw = this->actor.shape.rot.y;
++        }
++
++        if (this->skelAnime.animation == walkAnim) {
++            Player_AnimPlayLoop(play, this, Player_GetIdleAnim(this));
++        }
++    }
++}
++
+ void Player_Action_8084B1D8(Player* this, PlayState* play) {
+     if (this->stateFlags1 & PLAYER_STATE1_IN_WATER) {
+         func_8084B000(this);
+         if (GameInteractor_Should(VB_PLAYER_FIRST_PERSON_DECELERATE, true, this)) {
+             func_8084AEEC(this, &this->linearVelocity, 0, this->actor.shape.rot.y);
+         }
++    } else if (Player_UseThirdPersonAim(this) && (this->unk_6AD == 2)) {
++        Player_ThirdPersonAimMove(this, play);
+     } else if (GameInteractor_Should(VB_PLAYER_FIRST_PERSON_DECELERATE, true, this)) {
+         Player_DecelerateToZero(this);
+     }
+@@ -12822,7 +12880,9 @@
+         }
+     }
+ 
+-    if (GameInteractor_Should(VB_PLAYER_FIRST_PERSON_ALIGN_YAW, true, this)) {
++    // SOH [Enhancement] Third-person aim keeps its own movement direction in `yaw` (set by Player_ThirdPersonAimMove)
++    if (!(Player_UseThirdPersonAim(this) && (this->unk_6AD == 2)) &&
++        GameInteractor_Should(VB_PLAYER_FIRST_PERSON_ALIGN_YAW, true, this)) {
+         this->yaw = this->actor.shape.rot.y;
+     }
+ }
+--- a/soh/src/code/z_camera.c	2026-11-14 19:31:06.064488172 +0000
++++ b/soh/src/code/z_camera.c	2026-11-14 23:22:36.265686449 +0000
+@@ -1443,6 +1443,9 @@
+     return 0;
+ }
+ 
++// SOH [Enhancement] Set by Camera_Parallel1 while aiming in third person so Camera_Free shifts over Link's shoulder
++static s32 sFreeCamShoulderAim = false;
++
+ s32 Camera_Free(Camera* camera) {
+     Vec3f* eye = &camera->eye;
+     Vec3f* at = &camera->at;
+@@ -1467,13 +1470,26 @@
+     }
+     sFreeLastFrame = curFrame;
+ 
+-    at->x = Camera_LERPCeilF(camera->player->actor.world.pos.x, camera->at.x, 0.5f, 1.0f);
++    // SOH [Enhancement] Third-person aim: move the camera to Link's left (over-the-shoulder), so Link sits on the
++    // right side of the screen and the center of the screen (future reticle) stays clear.
++    f32 shoulderX = 0.0f;
++    f32 shoulderZ = 0.0f;
++    if (sFreeCamShoulderAim) {
++        f32 shoulder =
++            Player_GetHeight(camera->player) * CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimShoulder"), 0.35f);
++
++        // camX is the yaw from `at` to `eye`; Link's left as seen from the camera is perpendicular to it.
++        shoulderX = -Math_CosS(camera->play->camX) * shoulder;
++        shoulderZ = Math_SinS(camera->play->camX) * shoulder;
++    }
++
++    at->x = Camera_LERPCeilF(camera->player->actor.world.pos.x + shoulderX, camera->at.x, 0.5f, 1.0f);
+     at->y = Camera_LERPCeilF(camera->player->actor.world.pos.y + (camera->player->rideActor != NULL
+                                                                       ? Player_GetHeight(camera->player) / 2
+                                                                       : Player_GetHeight(camera->player)) /
+                                                                      1.2f,
+                              camera->at.y, 0.5f, 1.0f);
+-    at->z = Camera_LERPCeilF(camera->player->actor.world.pos.z, camera->at.z, 0.5f, 1.0f);
++    at->z = Camera_LERPCeilF(camera->player->actor.world.pos.z + shoulderZ, camera->at.z, 0.5f, 1.0f);
+ 
+     playerHeight = Player_GetHeight(camera->player);
+ 
+@@ -1536,6 +1552,16 @@
+                          ? para1->distTarget
+                          : CVarGetInteger(CVAR_SETTING("FreeLook.MaxCameraDistance"), para1->distTarget);
+     f32 speedScaler = CVarGetInteger(CVAR_SETTING("FreeLook.TransitionSpeed"), 25);
++    f32 fovTarget = 65.0f;
++
++    // SOH [Enhancement] Third-person aim: zoom in (closer camera and narrower FOV). The zoom fades in/out smoothly
++    // because camera->dist and camera->fov are interpolated every frame below.
++    if (sFreeCamShoulderAim) {
++        distTarget *= CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimZoom"), 0.6f);
++        speedScaler = CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimTransitionSpeed"), 15.0f);
++        fovTarget = CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimFov"), 60.0f);
++    }
++
+     f32 distDiff = ABS(distTarget - camera->dist);
+     if (distDiff > 0)
+         camera->dist = Camera_LERPCeilF(distTarget, camera->dist, speedScaler / (distDiff + speedScaler), 0.0f);
+@@ -1552,7 +1578,7 @@
+         *eye = sp6C.pos;
+     }
+ 
+-    camera->fov = Camera_LERPCeilF(65.0f, camera->fov, camera->fovUpdateRate, 1.0f);
++    camera->fov = Camera_LERPCeilF(fovTarget, camera->fov, camera->fovUpdateRate, 1.0f);
+     camera->roll = Camera_LERPCeilS(0, camera->roll, 0.5, 0xA);
+ 
+     return 1;
+@@ -2150,6 +2176,17 @@
+     f32 playerHeight;
+     s32 pad3;
+ 
++    // SOH [Enhancement] Third-person aim (slingshot / bow): while aiming, behave as the free camera
++    // (right stick / mouse), keeping the camera behind Link instead of locking it to his facing direction.
++    if (CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && camera->player != NULL &&
++        (camera->player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) && camera->player->unk_6AD == 2) {
++        camera->play->manualCamera = true;
++        sFreeCamShoulderAim = true;
++        Camera_Free(camera);
++        sFreeCamShoulderAim = false;
++        return 1;
++    }
++
+     playerHeight = Player_GetHeight(camera->player);
+     if (RELOAD_PARAMS) {
+         CameraModeValue* values = sCameraSettings[camera->setting].cameraModes[camera->mode].values;

@@ -1500,7 +1500,8 @@ static bool KaleidoScope_IsTabbedMapPage(PauseContext* pauseCtx) {
 // Menu em abas durante o prompt de salvar (state 7): mantem o layout da aba (sem paginas vizinhas, mapa no lugar).
 // So desenho: nao altera nada da logica do prompt do SoH.
 static bool KaleidoScope_SaveLayoutActive(PauseContext* pauseCtx) {
-    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 && !pauseCtx->randoQuestMode &&
+    return CVarGetInteger(CVAR_ENHANCEMENT("TabbedPauseMenu"), 1) != 0 &&
+           CVarGetInteger(CVAR_ENHANCEMENT("BetterSaveMenu"), 1) != 0 && !pauseCtx->randoQuestMode &&
            pauseCtx->state == 7;
 }
 

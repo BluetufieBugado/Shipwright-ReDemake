@@ -12815,8 +12815,16 @@ static void Player_ThirdPersonAimMove(Player* this, PlayState* play) {
     f32 speedTarget;
     s16 yawTarget;
     LinkAnimationHeader* walkAnim = func_8083356C(this);
+    s32 hasStickInput;
+    s32 savedAimMode = this->unk_6AD;
 
-    if (Player_GetMovementSpeedAndYaw(this, &speedTarget, &yawTarget, SPEED_MODE_LINEAR, play)) {
+    // Player_CalcSpeedAndYawFromControlStick forces speed 0 whenever unk_6AD != 0 (any item-aiming state),
+    // so read the stick as if Link was not aiming, then restore the state.
+    this->unk_6AD = 0;
+    hasStickInput = Player_GetMovementSpeedAndYaw(this, &speedTarget, &yawTarget, SPEED_MODE_LINEAR, play);
+    this->unk_6AD = savedAimMode;
+
+    if (hasStickInput) {
         speedTarget *= CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimSpeed"), 0.4f);
         Math_StepToF(&this->linearVelocity, speedTarget, 1.5f);
         this->yaw = yawTarget;
