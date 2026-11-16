@@ -7,41 +7,62 @@
 extern "C" {
 #include "z64.h"
 #include "macros.h"
+#include "variables.h"
 extern PlayState* gPlayState;
 }
 
-// Opção "Remake Controls".
-// Padrão = 1 (ligado) para você poder testar antes de existir o checkbox no menu.
-// Quando o checkbox existir, ele controla este mesmo valor.
 #define CVAR_REMAKE_CONTROLS_NAME CVAR_ENHANCEMENT("RemakeControls")
 #define CVAR_REMAKE_CONTROLS_DEFAULT 1
 #define CVAR_REMAKE_CONTROLS_VALUE CVarGetInteger(CVAR_REMAKE_CONTROLS_NAME, CVAR_REMAKE_CONTROLS_DEFAULT)
 
-// Roda uma vez por frame, antes do jogo processar o Link.
-//
-// Etapa 1: segurar Z (que você liga ao ZL no editor de controles do SoH)
-// também "aperta" o R do N64, que é o botão do escudo no jogo original.
-// Resultado: ZL mira e levanta o escudo ao mesmo tempo, como no remake.
-static void OnGameFrameUpdateRemakeControls() {
-    if (!GameInteractor::IsSaveLoaded() || gPlayState == nullptr) {
-        return;
-    }
-
-    Input* input = &gPlayState->state.input[0];
-
+// Segurar Z também "aperta" o R do N64 (escudo).
+static void ApplyShieldInput(Input* input) {
     if (CHECK_BTN_ANY(input->cur.button, BTN_Z)) {
         input->cur.button |= BTN_R;
 
-        // "press" = o frame exato em que o botão foi apertado
         if (CHECK_BTN_ANY(input->press.button, BTN_Z)) {
             input->press.button |= BTN_R;
         }
     }
 }
 
-static void RegisterRemakeControls() {
-    // Só registra o hook quando a opção está ligada (mesmo padrão do MoonJump.cpp)
-    COND_HOOK(OnGameFrameUpdate, CVAR_REMAKE_CONTROLS_VALUE, OnGameFrameUpdateRemakeControls);
+// ===== TESTE TEMPORÁRIO (diagnóstico) =====
+// Cada vez que você APERTA o ZL, ganha rupias:
+//   +1  = o hook do "inicio do frame" está rodando e viu o Z
+//   +10 = o hook do "update do Link" está rodando e viu o Z
+//   +11 = os dois
+//   nada = este arquivo não está sendo executado
+static void OnFrameRemakeControls() {
+    if (!GameInteractor::IsSaveLoaded() || gPlayState == nullptr) {
+        return;
+    }
+    Input* input = &gPlayState->state.input[0];
+
+    if (CHECK_BTN_ANY(input->press.button, BTN_Z)) {
+        gSaveContext.rupeeAccumulator += 1;
+    }
+    ApplyShieldInput(input);
 }
 
-static RegisterShipInitFunc initFunc(RegisterRemakeControls, { CVAR_REMAKE_CONTROLS_NAME });
+static void OnPlayerUpdateRemakeControls() {
+    if (!GameInteractor::IsSaveLoaded() || gPlayState == nullptr) {
+        return;
+    }
+    Input* input = &gPlayState->state.input[0];
+
+    if (CHECK_BTN_ANY(input->press.button, BTN_Z)) {
+        gSaveContext.rupeeAccumulator += 10;
+    }
+    ApplyShieldInput(input);
+}
+
+static void RegisterFrameHook() {
+    COND_HOOK(OnGameFrameUpdate, CVAR_REMAKE_CONTROLS_VALUE, OnFrameRemakeControls);
+}
+
+static void RegisterPlayerHook() {
+    COND_HOOK(OnPlayerUpdate, CVAR_REMAKE_CONTROLS_VALUE, OnPlayerUpdateRemakeControls);
+}
+
+static RegisterShipInitFunc initFrame(RegisterFrameHook, { CVAR_REMAKE_CONTROLS_NAME });
+static RegisterShipInitFunc initPlayer(RegisterPlayerHook, { CVAR_REMAKE_CONTROLS_NAME });
