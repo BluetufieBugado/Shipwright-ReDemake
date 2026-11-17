@@ -157,12 +157,22 @@ class ThirdPersonAimReticleWindow final : public Ship::GuiWindow {
     void UpdateElement() override {
     }
     void DrawElement() override {
-        const bool enabled = CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) != 0 &&
+        const bool enabled = CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 1) != 0 &&
                              CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimReticle"), 1) != 0;
         const bool menuOpen = mSohMenu != nullptr && mSohMenu->IsVisible();
         const bool aiming = enabled && !menuOpen && Player_IsThirdPersonAiming() != 0;
+        int ammo = -1;
+        int score = -1;
+        int scoreKind = 0;
+        if (aiming && CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimAmmo"), 1) != 0) {
+            ammo = Player_GetThirdPersonAimAmmo();
+            if (ammo >= 0) {
+                score = Player_GetThirdPersonAimScore(&scoreKind);
+            }
+        }
         ThirdPersonAimReticle_Draw(aiming, CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimReticleSize"), 1.6f),
-                                   CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimReticleOpacity"), 0.9f));
+                                   CVarGetFloat(CVAR_ENHANCEMENT("ThirdPersonAimReticleOpacity"), 0.9f), ammo, score,
+                                   scoreKind);
     }
 };
 

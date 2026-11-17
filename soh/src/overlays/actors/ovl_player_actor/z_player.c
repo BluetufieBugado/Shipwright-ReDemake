@@ -16,6 +16,7 @@
 #include "overlays/actors/ovl_En_Elf/z_en_elf.h"
 #include "overlays/actors/ovl_En_Fish/z_en_fish.h"
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h"
+#include "overlays/actors/ovl_En_Syateki_Itm/z_en_syateki_itm.h"
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "overlays/misc/ovl_kaleido_scope/z_kaleido_scope.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
@@ -5858,7 +5859,7 @@ static s32 Player_UseThirdPersonAim(Player* this) {
         return 0;
     }
 
-    return CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) && func_8002DD6C(this) &&
+    return CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 1) && func_8002DD6C(this) &&
            !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE);
 }
 
@@ -5866,7 +5867,7 @@ static s32 Player_UseThirdPersonAim(Player* this) {
 // (shooting gallery and aiming a bow from horseback) also get the on-screen reticle and the shot correction.
 // Needs ThirdPersonAim on (master switch); ThirdPersonAimFirstPerson turns just this part off.
 static s32 Player_UseFirstPersonAimAssist(Player* this) {
-    if (!CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 0) ||
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 1) ||
         !CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimFirstPerson"), 1) || !func_8002DD6C(this) ||
         Player_UseThirdPersonAim(this)) {
         return 0;
@@ -5894,6 +5895,63 @@ u8 Player_IsThirdPersonAiming(void) {
 
     return (player != NULL) && (Player_UseThirdPersonAim(player) || Player_UseFirstPersonAimAssist(player)) &&
            (player->unk_6AD == 2) && (player->csAction == 0);
+}
+
+// SOH [Enhancement] Third-person aim: ammo shown next to the reticle (soh/Enhancements/ThirdPersonAim).
+// Same numbers the HUD shows on the C button: arrows / seeds, the shots left in the shooting gallery or the arrows
+// left in the horseback archery. Returns -1 when there is nothing to show (hookshot, boomerang...).
+s32 Player_GetThirdPersonAimAmmo(void) {
+    Player* player;
+    s32 item;
+    s32 type;
+    s32 ammo;
+
+    if (gPlayState == NULL) {
+        return -1;
+    }
+
+    player = GET_PLAYER(gPlayState);
+    if ((player == NULL) || Player_HoldsHookshot(player) || !func_8002DD6C(player)) {
+        return -1;
+    }
+
+    ammo = func_80834380(gPlayState, player, &item, &type);
+    if ((gSaveContext.minigameState != 1) && (gPlayState->shootingGalleryStatus > 0)) {
+        // the HUD shows one less than the internal counter
+        ammo = (gPlayState->shootingGalleryStatus > 1) ? (gPlayState->shootingGalleryStatus - 1) : 0;
+    }
+
+    return (ammo < 0) ? 0 : ammo;
+}
+
+// SOH [Enhancement] Third-person aim: counter shown under the ammo in the minigames.
+// Returns the value, or -1 for none. kind: 1 = targets hit in the shooting gallery, 2 = points in the horseback archery.
+s32 Player_GetThirdPersonAimScore(s32* kind) {
+    Actor* actor;
+    s32 i;
+
+    *kind = 0;
+    if (gPlayState == NULL) {
+        return -1;
+    }
+
+    if (gSaveContext.minigameState == 1) {
+        *kind = 2;
+        return gSaveContext.minigameScore;
+    }
+
+    if (gPlayState->shootingGalleryStatus != 0) {
+        for (i = 0; i < ACTORCAT_MAX; i++) {
+            for (actor = gPlayState->actorCtx.actorLists[i].head; actor != NULL; actor = actor->next) {
+                if (actor->id == ACTOR_EN_SYATEKI_ITM) {
+                    *kind = 1;
+                    return ((EnSyatekiItm*)actor)->hitCount;
+                }
+            }
+        }
+    }
+
+    return -1;
 }
 
 // SOH [Enhancement] Third-person aim: makes the shot land on the point under the reticle (center of the screen).
