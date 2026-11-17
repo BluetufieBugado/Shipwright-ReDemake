@@ -34,9 +34,9 @@ The menus are almost ready, but they still need some minor fine-tuning in the pr
 
 ✔ Music Notebook when you open the ocarina and press the down button on the D-pad (based on the Nintendo 64 controller, not the C down button)
 
-✔ Aiming with the slingshot, as well as with the bow and arrow, in third person—just like in the Remake.
-
 <img width="480" alt="image" src="https://github.com/user-attachments/assets/9fe71224-9609-4cc8-b119-db1c963e6c10" />
+
+✔ Aiming with the slingshot, as well as with the bow and arrow, in third person—just like in the Remake.
 
 ❌ Smoother controls
 
