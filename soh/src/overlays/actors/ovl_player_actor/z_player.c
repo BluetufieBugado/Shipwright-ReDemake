@@ -396,6 +396,9 @@ static s32 sSavedCurrentMask;
 static Vec3f sInteractWallCheckResult;
 static Input* sControlInput;
 
+// Remake controls (SoH): implemented in RemakeControls.cpp
+void RemakeControls_ModifyPlayerInput(Input* input);
+
 // .data
 
 static u8 sUpperBodyLimbCopyMap[PLAYER_LIMB_MAX] = {
@@ -12537,6 +12540,7 @@ void Player_Update(Actor* thisx, PlayState* play) {
             memset(&input, 0, sizeof(input));
         } else {
             input = play->state.input[0];
+            RemakeControls_ModifyPlayerInput(&input);
             if (this->textboxBtnCooldownTimer != 0) {
                 input.cur.button &= ~(BTN_A | BTN_B | BTN_CUP);
                 input.press.button &= ~(BTN_A | BTN_B | BTN_CUP);
