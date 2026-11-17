@@ -1,0 +1,76 @@
+diff --git a/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp b/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp
+index 5e10947..ee0eb2c 100644
+--- a/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp
++++ b/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp
+@@ -24,9 +24,27 @@ void func_80083108(PlayState* play);
+ //   X  -> C-baixo   : pulo (ainda não implementado, só é consumido)
+ static const u16 kRemakeCarrierButtons = BTN_CUP | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+ 
++#ifndef AGE_REQ_NONE
++#define AGE_REQ_NONE 9
++#endif
++
++// O item do slot serve para a idade atual do Link? Usa as mesmas tabelas do menu de pausa
++// (gSlotAgeReqs e gItemAgeReqs), lidas ao vivo porque o SoH as altera em z_play.c.
++static bool IsSlotUsableForCurrentAge(int slot) {
++    const u8 item = gSaveContext.inventory.items[slot];
++    if (item == ITEM_NONE) {
++        return false;
++    }
++    const int slotReq = gSlotAgeReqs[slot];
++    const int itemReq = gItemAgeReqs[item];
++    return (slotReq == AGE_REQ_NONE || slotReq == gSaveContext.linkAge) &&
++           (itemReq == AGE_REQ_NONE || itemReq == gSaveContext.linkAge);
++}
++
+ // O item em foco vive no slot C-esquerdo (buttonItems[1] / cButtonSlots[0]).
+ // Assim o HUD, a munição, o "botão desativado" e todas as regras de uso do jogo funcionam sem mudanças.
+-static void CycleFocusedItem(PlayState* play, int dir) {
++// Retorna false se não existe nenhum item válido para a idade atual.
++static bool CycleFocusedItem(PlayState* play, int dir) {
+     const int count = ARRAY_COUNT(gSaveContext.inventory.items);
+     int slot = gSaveContext.equips.cButtonSlots[0];
+ 
+@@ -36,15 +54,29 @@ static void CycleFocusedItem(PlayState* play, int dir) {
+ 
+     for (int n = 0; n < count; n++) {
+         slot = (slot + dir + count) % count;
+-        u8 item = gSaveContext.inventory.items[slot];
+-        if (item != ITEM_NONE) {
++        if (IsSlotUsableForCurrentAge(slot)) {
+             gSaveContext.equips.cButtonSlots[0] = slot;
+-            gSaveContext.equips.buttonItems[1] = item;
++            gSaveContext.equips.buttonItems[1] = gSaveContext.inventory.items[slot];
+             Interface_LoadItemIcon1(play, 1);
+             func_80083108(play); // recalcula botões ativos/desativados para o novo item
+-            return;
++            return true;
+         }
+     }
++    return false;
++}
++
++// Se o item em foco deixou de servir (mudou de idade, save antigo), passa para o próximo válido.
++static void ValidateFocusedItem(PlayState* play) {
++    const int slot = gSaveContext.equips.cButtonSlots[0];
++    if (slot >= ARRAY_COUNT(gSaveContext.inventory.items) || IsSlotUsableForCurrentAge(slot)) {
++        return; // nada em foco, ou o item em foco é válido
++    }
++    if (!CycleFocusedItem(play, 1)) {
++        // Nenhum item válido: esvazia o foco (sem carregar ícone, o HUD esconde o slot)
++        gSaveContext.equips.cButtonSlots[0] = ITEM_NONE;
++        gSaveContext.equips.buttonItems[1] = ITEM_NONE;
++        func_80083108(play);
++    }
+ }
+ 
+ // Chamada por Player_Update (z_player.c) na cópia local do input do Link.
+@@ -74,6 +106,8 @@ extern "C" void RemakeControls_ModifyPlayerInput(Input* input) {
+     input->cur.button &= ~kRemakeCarrierButtons;
+     input->press.button &= ~kRemakeCarrierButtons;
+ 
++    ValidateFocusedItem(gPlayState);
++
+     if (prevPress) {
+         CycleFocusedItem(gPlayState, -1);
+     } else if (nextPress) {
