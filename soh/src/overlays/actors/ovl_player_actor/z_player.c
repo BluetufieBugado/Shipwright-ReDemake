@@ -12540,11 +12540,11 @@ void Player_Update(Actor* thisx, PlayState* play) {
             memset(&input, 0, sizeof(input));
         } else {
             input = play->state.input[0];
-            RemakeControls_ModifyPlayerInput(&input);
             if (this->textboxBtnCooldownTimer != 0) {
                 input.cur.button &= ~(BTN_A | BTN_B | BTN_CUP);
                 input.press.button &= ~(BTN_A | BTN_B | BTN_CUP);
             }
+            RemakeControls_ModifyPlayerInput(&input);
         }
 
         if (CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f) != 1.0f &&
