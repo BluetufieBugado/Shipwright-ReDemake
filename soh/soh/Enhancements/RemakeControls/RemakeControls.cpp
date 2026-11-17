@@ -2,6 +2,8 @@
 
 #include "soh/cvar_prefixes.h"
 
+#include "RemakeControls.h"
+
 extern "C" {
 #include "z64.h"
 #include "macros.h"
@@ -123,6 +125,14 @@ extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
         CycleFocusedItem(play, 1);
     }
     return 1;
+}
+
+bool RemakeControls_IsCarouselOpen() {
+    return sCarouselOpen;
+}
+
+bool RemakeControls_IsSlotUsable(int slot) {
+    return IsSlotUsableForCurrentAge(slot);
 }
 
 // Chamada por Player_Update (z_player.c) na cópia local do input do Link.
