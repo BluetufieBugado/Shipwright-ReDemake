@@ -651,6 +651,9 @@ void Play_Init(GameState* thisx) {
 #endif
 }
 
+// Remake controls (SoH): implemented in RemakeControls.cpp
+s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused);
+
 void Play_Update(PlayState* play) {
     Input* input = play->state.input;
     s32 isPaused;
@@ -1111,6 +1114,11 @@ void Play_Update(PlayState* play) {
 
             PLAY_LOG(3551);
             isPaused = (play->pauseCtx.state != 0) || (play->pauseCtx.debugState != 0);
+
+            // Remake controls (SoH): o carrossel de itens pausa o mundo reaproveitando o isPaused
+            if (RemakeControls_UpdateCarousel(play, isPaused)) {
+                isPaused = true;
+            }
 
             PLAY_LOG(3555);
             AnimationContext_Reset(&play->animationCtx);

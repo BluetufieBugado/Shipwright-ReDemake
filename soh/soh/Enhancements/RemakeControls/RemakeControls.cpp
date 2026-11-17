@@ -11,6 +11,7 @@ extern PlayState* gPlayState;
 // Definidas em z_parameter.c
 void Interface_LoadItemIcon1(PlayState* play, u16 button);
 void func_80083108(PlayState* play);
+s32 Player_InCsMode(PlayState* play);
 }
 
 #define CVAR_REMAKE_CONTROLS_NAME CVAR_ENHANCEMENT("RemakeControls")
@@ -79,6 +80,51 @@ static void ValidateFocusedItem(PlayState* play) {
     }
 }
 
+// ---- Carrossel de itens (etapa 1: só a pausa; a faixa de itens na tela vem depois) ----
+// Segurar L ou R pausa o mundo. Enquanto está aberto, L/R trocam o item em foco.
+// Soltar os dois fecha o carrossel e o jogo volta a correr.
+static bool sCarouselOpen = false;
+
+static bool CanUseCarousel(PlayState* play) {
+    return gSaveContext.gameMode == GAMEMODE_NORMAL && play->msgCtx.msgMode == MSGMODE_NONE &&
+           play->gameOverCtx.state == GAMEOVER_INACTIVE && play->transitionMode == TRANS_MODE_OFF &&
+           play->transitionTrigger == TRANS_TRIGGER_OFF && !Player_InCsMode(play);
+}
+
+// Chamada por Play_Update (z_play.c), logo depois de calcular isPaused.
+// Retorna 1 se o mundo deve ficar parado neste frame.
+extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
+    if (!CVAR_REMAKE_CONTROLS_VALUE || isPaused || !CanUseCarousel(play)) {
+        sCarouselOpen = false;
+        return 0;
+    }
+
+    // Lê o input físico direto: L/R chegam aqui como C-esquerdo/C-direito.
+    const Input* input = &play->state.input[0];
+    const bool prevPress = CHECK_BTN_ANY(input->press.button, BTN_CLEFT);
+    const bool nextPress = CHECK_BTN_ANY(input->press.button, BTN_CRIGHT);
+    const bool held = CHECK_BTN_ANY(input->cur.button, BTN_CLEFT | BTN_CRIGHT);
+
+    if (!sCarouselOpen) {
+        if (!(prevPress || nextPress)) {
+            return 0;
+        }
+        sCarouselOpen = true; // abre já trocando o item uma vez (toque rápido = troca rápida)
+    }
+
+    if (!held) {
+        sCarouselOpen = false;
+        return 0;
+    }
+
+    if (prevPress) {
+        CycleFocusedItem(play, -1);
+    } else if (nextPress) {
+        CycleFocusedItem(play, 1);
+    }
+    return 1;
+}
+
 // Chamada por Player_Update (z_player.c) na cópia local do input do Link.
 extern "C" void RemakeControls_ModifyPlayerInput(Input* input) {
     if (!CVAR_REMAKE_CONTROLS_VALUE) {
@@ -99,20 +145,12 @@ extern "C" void RemakeControls_ModifyPlayerInput(Input* input) {
 
     const bool useHeld = CHECK_BTN_ANY(input->cur.button, BTN_CUP);
     const bool usePress = CHECK_BTN_ANY(input->press.button, BTN_CUP);
-    const bool prevPress = CHECK_BTN_ANY(input->press.button, BTN_CLEFT);
-    const bool nextPress = CHECK_BTN_ANY(input->press.button, BTN_CRIGHT);
 
     // Consome os portadores: o jogo não pode reagir a eles como botões C de verdade.
     input->cur.button &= ~kRemakeCarrierButtons;
     input->press.button &= ~kRemakeCarrierButtons;
 
     ValidateFocusedItem(gPlayState);
-
-    if (prevPress) {
-        CycleFocusedItem(gPlayState, -1);
-    } else if (nextPress) {
-        CycleFocusedItem(gPlayState, 1);
-    }
 
     // ZR usa o item em foco: o jogo enxerga um C-esquerdo comum.
     if (useHeld) {
