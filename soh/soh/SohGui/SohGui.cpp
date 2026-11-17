@@ -46,6 +46,7 @@
 #include "soh/Enhancements/OcarinaSongMenu/OcarinaSongMenu.h"
 #include "soh/Enhancements/MicOcarina/MicOcarinaOverlay.h"
 #include "soh/Enhancements/ThirdPersonAim/ThirdPersonAimReticle.h"
+#include "soh/Enhancements/RemakeControls/RemakeControls.h"
 
 namespace SohGui {
 
@@ -178,6 +179,26 @@ class ThirdPersonAimReticleWindow final : public Ship::GuiWindow {
 
 std::shared_ptr<ThirdPersonAimReticleWindow> mThirdPersonAimReticleWindow;
 
+// Invisible, always-running window (same pattern as MicOcarinaOverlayWindow): Draw() is overridden and never calls
+// ImGui::Begin, so there is no frame, title bar or close button. It ignores IsVisible() on purpose, so the item
+// carousel can never be hidden by closing a window. The overlay hides itself based on the game state.
+class RemakeControlsWindow final : public Ship::GuiWindow {
+  public:
+    using Ship::GuiWindow::GuiWindow;
+    void Draw() override {
+        DrawElement();
+    }
+    void InitElement() override {
+    }
+    void UpdateElement() override {
+    }
+    void DrawElement() override {
+        RemakeControlsOverlay_Draw();
+    }
+};
+
+std::shared_ptr<RemakeControlsWindow> mRemakeControlsWindow;
+
 UIWidgets::Colors GetMenuThemeColor() {
     return mSohMenu->GetMenuThemeColor();
 }
@@ -222,6 +243,7 @@ std::vector<std::shared_ptr<Ship::GuiWindow>> GetAllGuiWindows() {
         mOcarinaSongMenuWindow,
         mMicOcarinaOverlayWindow,
         mThirdPersonAimReticleWindow,
+        mRemakeControlsWindow,
         // Registered outside SohGui.
         gui->GetGuiWindow("Configure Controller"),
         gui->GetGuiWindow("Console"),
@@ -351,6 +373,10 @@ void SetupGuiElements() {
                                                                                  "Third Person Aim Reticle");
     gui->AddGuiWindow(mThirdPersonAimReticleWindow);
     mThirdPersonAimReticleWindow->Show();
+    mRemakeControlsWindow =
+        std::make_shared<RemakeControlsWindow>(CVAR_WINDOW("RemakeControlsOverlay"), "Remake Controls Overlay");
+    gui->AddGuiWindow(mRemakeControlsWindow);
+    mRemakeControlsWindow->Show();
 }
 
 void Destroy() {
@@ -391,6 +417,7 @@ void Destroy() {
     mOcarinaSongMenuWindow = nullptr;
     mMicOcarinaOverlayWindow = nullptr;
     mThirdPersonAimReticleWindow = nullptr;
+    mRemakeControlsWindow = nullptr;
 }
 
 void RegisterPopup(std::string title, std::string message, std::string button1, std::string button2,

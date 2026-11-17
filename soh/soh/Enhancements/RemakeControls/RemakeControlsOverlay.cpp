@@ -30,18 +30,18 @@ std::shared_ptr<Fast::Fast3dGui> GetFastGui() {
 ImTextureID GetItemTexture(int item) {
     static bool sRegistered[256] = {};
     if (item < 0 || item >= ITEM_NONE) {
-        return ImTextureID{};
+        return nullptr;
     }
     auto gui = GetFastGui();
     if (gui == nullptr) {
-        return ImTextureID{};
+        return nullptr;
     }
     char name[32];
     snprintf(name, sizeof(name), "RemakeItem_%d", item);
     if (!sRegistered[item]) {
         const char* path = (const char*)gItemIcons[item];
         if (path == nullptr) {
-            return ImTextureID{};
+            return nullptr;
         }
         gui->LoadGuiTexture(name, path, "", ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
         sRegistered[item] = true;
