@@ -23,6 +23,7 @@ namespace {
 float sFade = 0.0f;         // 0 = invisível, 1 = totalmente visível
 float sScroll = 0.0f;       // posição (em itens) que a faixa está mostrando, com animação
 bool sScrollValid = false;  // false = a próxima abertura começa já no item atual, sem deslizar
+bool sLastSortByType = false; // para detectar a troca de ordenação e não deslizar pela faixa embaralhada
 
 std::shared_ptr<Fast::Fast3dGui> GetFastGui() {
     return std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
@@ -163,6 +164,11 @@ void DrawCornerItem() {
     if (gSaveContext.gameMode != GAMEMODE_NORMAL) {
         return;
     }
+    // Menu de pausa (e o de debug) aberto: o item do canto some, senão cobre as rupias.
+    // O carrossel não usa o pauseCtx (é só o isPaused do Play_Update), então não é afetado.
+    if (gPlayState->pauseCtx.state != 0 || gPlayState->pauseCtx.debugState != 0) {
+        return;
+    }
     const int item = gSaveContext.equips.buttonItems[1];
     if (item >= 0xF0) {
         return; // nenhum item em foco
@@ -261,22 +267,26 @@ void RemakeControlsOverlay_Draw() {
     // Fundo escurecido (o desfoque vem numa etapa própria)
     dl->AddRectFilled(vp->Pos, ImVec2(vp->Pos.x + W, vp->Pos.y + H), IM_COL32(0, 0, 0, (int)(165.0f * sFade)));
 
-    // Itens do inventário que servem para a idade atual, na ordem dos slots
+    // Itens do inventário que servem para a idade atual, na ordem escolhida (slots ou por tipo)
     int slots[ARRAY_COUNT(gSaveContext.inventory.items)];
-    int count = 0;
+    const int count = RemakeControls_GetCarouselSlots(slots, (int)ARRAY_COUNT(slots));
     int sel = -1;
     const int equipped = gSaveContext.equips.cButtonSlots[0];
-    for (int s = 0; s < ARRAY_COUNT(gSaveContext.inventory.items); s++) {
-        if (!RemakeControls_IsSlotUsable(s)) {
-            continue;
+    for (int i = 0; i < count; i++) {
+        if (slots[i] == equipped) {
+            sel = i;
+            break;
         }
-        if (s == equipped) {
-            sel = count;
-        }
-        slots[count++] = s;
     }
     if (count == 0 || sel < 0) {
         return;
+    }
+
+    // Trocou a ordenação: a faixa pula direto para a nova posição do item, sem deslizar
+    const bool sortByType = RemakeControls_IsSortByType();
+    if (sortByType != sLastSortByType) {
+        sLastSortByType = sortByType;
+        sScrollValid = false;
     }
 
     // Desliza até o item selecionado pelo caminho mais curto (a lista dá a volta, como o L/R)
@@ -459,5 +469,40 @@ void RemakeControlsOverlay_Draw() {
             dl->AddCircleFilled(kc, r, IM_COL32(255, 255, 255, (int)(235.0f * sFade)), 24);
             DrawTextCentered(dl, keys[i], kc, r * 1.45f, IM_COL32(30, 30, 30, fadeA));
         }
+    }
+
+    // Ordenação: pontinhos (um por modo, o atual aceso), nome do modo e dica "Sort" com a tecla Y.
+    // Posição e tamanhos são frações de H, fáceis de ajustar aqui.
+    {
+        const char* modeNames[2] = { "Default", "By Type" };
+        const char* label = modeNames[sortByType ? 1 : 0];
+        const char* hint = "Sort";
+        const float fs = H * 0.028f;
+        const float r = H * 0.014f;
+        const float dotR = H * 0.0045f;
+        const float dotGap = H * 0.010f;
+        const float gap = H * 0.012f;
+        const float bigGap = H * 0.030f;
+        const float y = cy + H * 0.352f;
+        // Largura fixa para o nome do modo: a linha não anda quando o texto muda
+        const float labelW = fmaxf(TextWidth(modeNames[0], fs), TextWidth(modeNames[1], fs));
+        const float hintW = TextWidth(hint, fs);
+        const float dotsW = 4.0f * dotR + dotGap;
+        const float total = dotsW + gap + labelW + bigGap + hintW + gap + 2.0f * r;
+        float x = cx - total * 0.5f;
+
+        for (int i = 0; i < 2; i++) {
+            const bool on = (i == (sortByType ? 1 : 0));
+            dl->AddCircleFilled(ImVec2(x + dotR + (float)i * (2.0f * dotR + dotGap), y), dotR,
+                                IM_COL32(255, 255, 255, (int)((on ? 255.0f : 70.0f) * sFade)), 12);
+        }
+        x += dotsW + gap;
+        DrawTextCentered(dl, label, ImVec2(x + labelW * 0.5f, y), fs, IM_COL32(255, 255, 255, fadeA));
+        x += labelW + bigGap;
+        DrawTextCentered(dl, hint, ImVec2(x + hintW * 0.5f, y), fs, IM_COL32(255, 255, 255, fadeA));
+        x += hintW + gap;
+        const ImVec2 kc(x + r, y);
+        dl->AddCircleFilled(kc, r, IM_COL32(255, 255, 255, (int)(235.0f * sFade)), 24);
+        DrawTextCentered(dl, "Y", kc, r * 1.45f, IM_COL32(30, 30, 30, fadeA));
     }
 }

@@ -21,6 +21,9 @@ s32 Player_InCsMode(PlayState* play);
 #define CVAR_REMAKE_CONTROLS_DEFAULT 1
 #define CVAR_REMAKE_CONTROLS_VALUE CVarGetInteger(CVAR_REMAKE_CONTROLS_NAME, CVAR_REMAKE_CONTROLS_DEFAULT)
 
+// Ordenação do carrossel: 0 = ordem dos slots do inventário, 1 = agrupado por tipo
+#define CVAR_REMAKE_SORT_NAME CVAR_ENHANCEMENT("RemakeControlsSortByType")
+
 // ---- HUD: item em foco no canto da tela (desenhado em RemakeControlsOverlay.cpp) ----
 static bool sCornerHidden = false;
 
@@ -65,28 +68,103 @@ static bool IsSlotUsableForCurrentAge(int slot) {
            (itemReq == AGE_REQ_NONE || itemReq == gSaveContext.linkAge);
 }
 
+// Posição do item na ordenação "por tipo" (menor = aparece antes). Os números são os ITEM_* do inventário
+// (os mesmos de GetItemName no RemakeControlsOverlay.cpp). Para mudar a ordem, é só reordenar esta lista.
+static int GetItemTypeRank(int item) {
+    static const u8 kTypeOrder[] = {
+        // Ataque à distância e ferramentas de combate
+        0x03, // Fairy Bow
+        0x04, // Fire Arrow
+        0x0C, // Ice Arrow
+        0x12, // Light Arrow
+        0x06, // Fairy Slingshot
+        0x0A, // Hookshot
+        0x0B, // Longshot
+        0x0E, // Boomerang
+        0x11, // Megaton Hammer
+        // Explosivos e consumíveis
+        0x02, // Bomb
+        0x09, // Bombchu
+        0x00, // Deku Stick
+        0x01, // Deku Nut
+        0x10, // Magic Beans
+        // Magias e utilidades
+        0x05, // Din's Fire
+        0x0D, // Farore's Wind
+        0x13, // Nayru's Love
+        0x0F, // Lens of Truth
+        // Ocarinas
+        0x07, // Fairy Ocarina
+        0x08, // Ocarina of Time
+        // Garrafas (todos os conteúdos, 0x14 a 0x20, contam como um grupo)
+        0x14,
+    };
+    if (item >= 0x14 && item <= 0x20) {
+        item = 0x14;
+    }
+    for (int i = 0; i < (int)ARRAY_COUNT(kTypeOrder); i++) {
+        if (kTypeOrder[i] == item) {
+            return i;
+        }
+    }
+    return 100 + item; // o resto (itens de troca e máscaras) vai no fim, pela numeração do item
+}
+
+bool RemakeControls_IsSortByType() {
+    return CVarGetInteger(CVAR_REMAKE_SORT_NAME, 0) != 0;
+}
+
+// Itens que servem para a idade atual, na ordem do carrossel. Em empate, vale a ordem dos slots.
+int RemakeControls_GetCarouselSlots(int* outSlots, int maxSlots) {
+    int count = 0;
+    for (int s = 0; s < (int)ARRAY_COUNT(gSaveContext.inventory.items) && count < maxSlots; s++) {
+        if (IsSlotUsableForCurrentAge(s)) {
+            outSlots[count++] = s;
+        }
+    }
+    if (RemakeControls_IsSortByType()) {
+        // Ordenação por inserção (no máximo 24 itens), estável
+        for (int i = 1; i < count; i++) {
+            const int slot = outSlots[i];
+            const int rank = GetItemTypeRank(gSaveContext.inventory.items[slot]);
+            int j = i - 1;
+            while (j >= 0 && GetItemTypeRank(gSaveContext.inventory.items[outSlots[j]]) > rank) {
+                outSlots[j + 1] = outSlots[j];
+                j--;
+            }
+            outSlots[j + 1] = slot;
+        }
+    }
+    return count;
+}
+
 // O item em foco vive no slot C-esquerdo (buttonItems[1] / cButtonSlots[0]).
 // Assim o HUD, a munição, o "botão desativado" e todas as regras de uso do jogo funcionam sem mudanças.
 // Retorna false se não existe nenhum item válido para a idade atual.
 static bool CycleFocusedItem(PlayState* play, int dir) {
-    const int count = ARRAY_COUNT(gSaveContext.inventory.items);
-    int slot = gSaveContext.equips.cButtonSlots[0];
-
-    if (slot >= count) {
-        slot = (dir > 0) ? -1 : count; // nada equipado: começa de uma ponta
+    int slots[ARRAY_COUNT(gSaveContext.inventory.items)];
+    const int count = RemakeControls_GetCarouselSlots(slots, (int)ARRAY_COUNT(slots));
+    if (count == 0) {
+        return false;
     }
 
-    for (int n = 0; n < count; n++) {
-        slot = (slot + dir + count) % count;
-        if (IsSlotUsableForCurrentAge(slot)) {
-            gSaveContext.equips.cButtonSlots[0] = slot;
-            gSaveContext.equips.buttonItems[1] = gSaveContext.inventory.items[slot];
-            Interface_LoadItemIcon1(play, 1);
-            func_80083108(play); // recalcula botões ativos/desativados para o novo item
-            return true;
+    // Posição do item em foco na lista; se não está nela, começa de uma ponta
+    const int current = gSaveContext.equips.cButtonSlots[0];
+    int idx = (dir > 0) ? -1 : count;
+    for (int i = 0; i < count; i++) {
+        if (slots[i] == current) {
+            idx = i;
+            break;
         }
     }
-    return false;
+    idx = ((idx + dir) % count + count) % count;
+
+    const int slot = slots[idx];
+    gSaveContext.equips.cButtonSlots[0] = slot;
+    gSaveContext.equips.buttonItems[1] = gSaveContext.inventory.items[slot];
+    Interface_LoadItemIcon1(play, 1);
+    func_80083108(play); // recalcula botões ativos/desativados para o novo item
+    return true;
 }
 
 // Se o item em foco deixou de servir (mudou de idade, save antigo), passa para o próximo válido.
@@ -144,6 +222,12 @@ extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
     if (!held) {
         sCarouselOpen = false;
         return 0;
+    }
+
+    // Y (chega como B) alterna a ordenação. O item em foco continua o mesmo, só muda a ordem da faixa.
+    if (CHECK_BTN_ANY(input->press.button, BTN_B)) {
+        CVarSetInteger(CVAR_REMAKE_SORT_NAME, RemakeControls_IsSortByType() ? 0 : 1);
+        PlayCarouselCursorSound();
     }
 
     if (prevPress) {
