@@ -21,6 +21,26 @@ s32 Player_InCsMode(PlayState* play);
 #define CVAR_REMAKE_CONTROLS_DEFAULT 1
 #define CVAR_REMAKE_CONTROLS_VALUE CVarGetInteger(CVAR_REMAKE_CONTROLS_NAME, CVAR_REMAKE_CONTROLS_DEFAULT)
 
+// ---- HUD: item em foco no canto da tela (desenhado em RemakeControlsOverlay.cpp) ----
+static bool sCornerHidden = false;
+
+extern "C" int RemakeControls_IsEnabled(void) {
+    return CVAR_REMAKE_CONTROLS_VALUE;
+}
+
+// Com o sistema ligado, os ícones C-esquerdo/C-baixo/C-direito originais deixam de ser desenhados.
+extern "C" int RemakeControls_HideOriginalCButtons(void) {
+    return CVAR_REMAKE_CONTROLS_VALUE;
+}
+
+extern "C" void RemakeControls_SetCornerHidden(int hidden) {
+    sCornerHidden = hidden != 0;
+}
+
+bool RemakeControls_IsCornerHidden() {
+    return sCornerHidden;
+}
+
 // Botões N64 usados como "portadores" (ver tabela do resumo):
 //   ZR -> C-cima    : usar item em foco
 //   L  -> C-esquerdo: item anterior

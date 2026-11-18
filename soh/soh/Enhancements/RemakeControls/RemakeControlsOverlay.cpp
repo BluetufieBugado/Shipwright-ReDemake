@@ -15,6 +15,7 @@ extern "C" {
 #include "macros.h"
 #include "variables.h"
 #include "functions.h"
+extern PlayState* gPlayState;
 }
 
 namespace {
@@ -147,9 +148,98 @@ void DrawTextCentered(ImDrawList* dl, const char* text, ImVec2 center, float fs,
     dl->AddText(ImGui::GetFont(), fs, p, col, text);
 }
 
+// Item em foco no canto superior direito (estilo remake): quadrado escuro com o ícone, quantidade no canto
+// inferior direito, etiqueta "R" pequena em cima e o rótulo "ZR" embaixo.
+// Segue a opacidade do C-esquerdo do HUD original (some e escurece junto com o HUD).
+void DrawCornerItem() {
+    // Ajuste fino (frações da altura da tela), medido no print do remake (1148x645)
+    const float kSize = 0.112f;        // lado do quadrado
+    const float kMarginRight = 0.080f; // distância da borda direita
+    const float kTop = 0.062f;         // distância do topo até o quadrado
+
+    if (!RemakeControls_IsEnabled() || gPlayState == nullptr || RemakeControls_IsCornerHidden()) {
+        return;
+    }
+    if (gSaveContext.gameMode != GAMEMODE_NORMAL) {
+        return;
+    }
+    const int item = gSaveContext.equips.buttonItems[1];
+    if (item >= 0xF0) {
+        return; // nenhum item em foco
+    }
+    const float alpha = (float)gPlayState->interfaceCtx.cLeftAlpha / 255.0f;
+    if (alpha <= 0.01f) {
+        return;
+    }
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const float W = vp->Size.x;
+    const float H = vp->Size.y;
+    const float size = H * kSize;
+    const ImVec2 mn(vp->Pos.x + W - H * kMarginRight - size, vp->Pos.y + H * kTop);
+    const ImVec2 mx(mn.x + size, mn.y + size);
+    const ImVec2 c((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+    const float round = size * 0.04f; // quase quadrado, como no remake
+
+    // Quadrado quase preto com borda fina clara
+    dl->AddRectFilled(mn, mx, IM_COL32(8, 8, 8, (int)(225.0f * alpha)), round);
+    dl->AddRect(mn, mx, IM_COL32(200, 200, 200, (int)(180.0f * alpha)), round, 0, fmaxf(1.0f, size * 0.02f));
+
+    // Ícone do item (grande, quase do tamanho do quadrado)
+    ImTextureID tex = GetItemTexture(item);
+    if (tex) {
+        const float is = size * 0.92f;
+        dl->AddImage(tex, ImVec2(c.x - is * 0.5f, c.y - is * 0.5f), ImVec2(c.x + is * 0.5f, c.y + is * 0.5f),
+                     ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, (int)(255.0f * alpha)));
+    }
+
+    // Quantidade no canto inferior direito (número grande)
+    int ammo = 0;
+    bool full = false;
+    if (GetAmmoInfo(item, &ammo, &full)) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d", ammo);
+        const float fs = size * 0.40f;
+        const int a = (int)(255.0f * alpha);
+        ImU32 col = IM_COL32(255, 255, 255, a);
+        if (ammo == 0) {
+            col = IM_COL32(255, 90, 90, a);
+        } else if (full) {
+            col = IM_COL32(120, 255, 120, a);
+        }
+        const float tw = TextWidth(buf, fs);
+        DrawTextCentered(dl, buf, ImVec2(mx.x - size * 0.10f - tw * 0.5f, mx.y - size * 0.08f - fs * 0.5f), fs, col);
+    }
+
+    // Etiqueta "R" pequena, ACIMA do quadrado (não encosta na borda)
+    {
+        const float bw = size * 0.24f;
+        const float bh = size * 0.18f;
+        const float cy = mn.y - size * 0.08f - bh * 0.5f;
+        const ImVec2 bmn(c.x - bw * 0.5f, cy - bh * 0.5f);
+        const ImVec2 bmx(c.x + bw * 0.5f, cy + bh * 0.5f);
+        dl->AddRectFilled(bmn, bmx, IM_COL32(225, 225, 225, (int)(235.0f * alpha)), bh * 0.3f);
+        DrawTextCentered(dl, "R", ImVec2(c.x, cy), bh * 0.85f, IM_COL32(30, 30, 30, (int)(255.0f * alpha)));
+    }
+
+    // Rótulo "ZR" em uma caixinha escura com borda, ABAIXO do quadrado
+    {
+        const float bw = size * 0.28f;
+        const float bh = size * 0.24f;
+        const float cy = mx.y + size * 0.10f + bh * 0.5f;
+        const ImVec2 bmn(c.x - bw * 0.5f, cy - bh * 0.5f);
+        const ImVec2 bmx(c.x + bw * 0.5f, cy + bh * 0.5f);
+        dl->AddRectFilled(bmn, bmx, IM_COL32(12, 12, 12, (int)(220.0f * alpha)), bh * 0.2f);
+        dl->AddRect(bmn, bmx, IM_COL32(200, 200, 200, (int)(180.0f * alpha)), bh * 0.2f, 0, 1.0f);
+        DrawTextCentered(dl, "ZR", ImVec2(c.x, cy), bh * 0.62f, IM_COL32(235, 235, 235, (int)(255.0f * alpha)));
+    }
+}
+
 } // namespace
 
 void RemakeControlsOverlay_Draw() {
+    DrawCornerItem(); // desenhado antes do carrossel: o escurecimento do carrossel passa por cima
     const ImGuiIO& io = ImGui::GetIO();
     const float dt = fminf(io.DeltaTime, 0.1f);
 

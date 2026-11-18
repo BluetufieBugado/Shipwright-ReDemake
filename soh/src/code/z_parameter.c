@@ -84,6 +84,9 @@ extern MessageTableEntry* sJpnMessageEntryTablePtr;
 
 // Remake controls (SoH): definido em z_play.c; 1 enquanto o carrossel de itens congela o mundo
 extern s32 gRemakeCarouselFrozen;
+// Remake controls (SoH): definidas em RemakeControls.cpp
+int RemakeControls_HideOriginalCButtons(void);
+void RemakeControls_SetCornerHidden(int hidden);
 
 #define DO_ACTION_TEX_WIDTH() 48
 #define DO_ACTION_TEX_HEIGHT() 16
@@ -3866,7 +3869,7 @@ void Interface_DrawActionLabel(GraphicsContext* gfxCtx, void* texture) {
 
 void Interface_DrawItemButtons(PlayState* play) {
     s16 pauseHudOffsetY = Interface_GetTabbedPauseHudOffsetY(play);
-    bool hideCButtons = Interface_HideCButtonsForQuestTab(play);
+    bool hideCButtons = Interface_HideCButtonsForQuestTab(play) || RemakeControls_HideOriginalCButtons();
     static void* cUpLabelTextures[] = { gNaviCUpENGTex, gNaviCUpENGTex, gNaviCUpENGTex, gNaviCUpJPTex };
     static s16 startButtonLeftPos[] = { 132, 130, 130, 132 };
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
@@ -5150,6 +5153,9 @@ void Interface_Draw(PlayState* play) {
     s16 pauseHudOffsetY = Interface_GetTabbedPauseHudOffsetY(play);
     bool hideHudForMapTab = Interface_HideHudForMapTab(play);
     bool hideCButtons = Interface_HideCButtonsForQuestTab(play) || hideHudForMapTab;
+    // O item em foco do remake (canto da tela) segue as mesmas regras de esconder; os C originais saem de vez.
+    RemakeControls_SetCornerHidden(hideCButtons);
+    hideCButtons = hideCButtons || RemakeControls_HideOriginalCButtons();
     static s16 magicArrowEffectsR[] = { 255, 100, 255 };
     static s16 magicArrowEffectsG[] = { 0, 100, 255 };
     static s16 magicArrowEffectsB[] = { 0, 255, 100 };
