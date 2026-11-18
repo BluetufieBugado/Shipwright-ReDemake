@@ -173,7 +173,8 @@ void DrawCornerItem() {
     }
 
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    // Camada de FUNDO do ImGui: fica por cima do jogo, mas atrás do menu do SoH (como o HUD de verdade)
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const float W = vp->Size.x;
     const float H = vp->Size.y;
     const float size = H * kSize;

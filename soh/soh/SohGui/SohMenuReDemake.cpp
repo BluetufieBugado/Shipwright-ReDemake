@@ -26,6 +26,11 @@ void SohMenu::AddMenuReDemake() {
         CVarSetInteger(CVAR_ENHANCEMENT("PauseMenuAnimatedLink"), 1);
     }
 
+    // Controles do remake: ligados por padrão (RemakeControls.cpp também assume 1 quando o CVar não existe).
+    if (CVarGetInteger(CVAR_ENHANCEMENT("RemakeControls"), -1) == -1) {
+        CVarSetInteger(CVAR_ENHANCEMENT("RemakeControls"), 1);
+    }
+
     AddMenuEntry("ReDemake", CVAR_SETTING("Menu.ReDemakeSidebarSection"));
 
     // ------------------------------------------------------------------ Ocarina
@@ -93,5 +98,20 @@ void SohMenu::AddMenuReDemake() {
             ImGui::Text("Mic: %.0f Hz  ->  %s", MicOcarina_GetDebugHz(),
                         (note >= 0 && note <= 4) ? noteNames[note] : "-");
         });
+
+    // ------------------------------------------------------------------ Controls
+    AddSidebarEntry("ReDemake", "Controls", 1);
+    WidgetPath controlsPath = { "ReDemake", "Controls", SECTION_COLUMN_1 };
+
+    AddWidget(controlsPath, "Item Controls", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(controlsPath, "Modern Item Switching", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("RemakeControls"))
+        .Options(CheckboxOptions().Tooltip(
+            "Remake-style item controls: ZL (Z) also raises the shield, ZR uses the focused item shown in the "
+            "top-right corner, and holding L or R pauses the game and opens the item carousel. The C buttons "
+            "are no longer drawn on the HUD. Turn this off to get the original C button behavior back. "
+            "Requires the controller bindings described in the project notes (ZR on C-Up, L on C-Left, "
+            "R on C-Right)."));
 }
 } // namespace SohGui
