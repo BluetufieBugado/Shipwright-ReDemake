@@ -654,11 +654,17 @@ void Play_Init(GameState* thisx) {
 // Remake controls (SoH): implemented in RemakeControls.cpp
 s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused);
 
+// Remake controls (SoH): vale 1 enquanto o carrossel de itens congela o mundo. O Interface_Draw (z_parameter.c) lê
+// esta variável para parar a contagem dos timers na tela (corrida do Dampé, missões cronometradas etc.).
+s32 gRemakeCarouselFrozen = 0;
+
 void Play_Update(PlayState* play) {
     Input* input = play->state.input;
     s32 isPaused;
     s32 remakeFrozen = 0; // Remake controls (SoH): carrossel de itens aberto
     s32 pad1;
+
+    gRemakeCarouselFrozen = 0;
 
     if ((SREG(1) < 0) || (DREG(0) != 0)) {
         SREG(1) = 0;
@@ -1120,6 +1126,7 @@ void Play_Update(PlayState* play) {
             if (RemakeControls_UpdateCarousel(play, isPaused)) {
                 isPaused = true;
                 remakeFrozen = 1;
+                gRemakeCarouselFrozen = 1;
             }
 
             PLAY_LOG(3555);

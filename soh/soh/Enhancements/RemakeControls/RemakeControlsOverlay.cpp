@@ -1,5 +1,6 @@
-// Faixa de itens do carrossel (estilo remake): fundo escurecido, itens em linha com o selecionado em destaque
-// e a quantidade embaixo. Desenha com a draw list de primeiro plano, igual ao OcarinaSongMenu.
+// Faixa de itens do carrossel (estilo remake): fundo escurecido, slots quadrados em linha com o selecionado
+// maior e dourado, setas, nome do item, barra de posição e dica "Select". Desenha com a draw list de primeiro plano,
+// igual ao OcarinaSongMenu.
 #include "RemakeControls.h"
 
 #include <ship/Context.h>
@@ -70,6 +71,82 @@ bool GetAmmoInfo(int item, int* outAmmo, bool* outFull) {
     return true;
 }
 
+// Nome do item, pela numeração dos itens do inventário do jogo (os mesmos valores dos ITEM_*).
+const char* GetItemName(int item) {
+    switch (item) {
+        case 0x00: return "Deku Stick";
+        case 0x01: return "Deku Nut";
+        case 0x02: return "Bomb";
+        case 0x03: return "Fairy Bow";
+        case 0x04: return "Fire Arrow";
+        case 0x05: return "Din's Fire";
+        case 0x06: return "Fairy Slingshot";
+        case 0x07: return "Fairy Ocarina";
+        case 0x08: return "Ocarina of Time";
+        case 0x09: return "Bombchu";
+        case 0x0A: return "Hookshot";
+        case 0x0B: return "Longshot";
+        case 0x0C: return "Ice Arrow";
+        case 0x0D: return "Farore's Wind";
+        case 0x0E: return "Boomerang";
+        case 0x0F: return "Lens of Truth";
+        case 0x10: return "Magic Beans";
+        case 0x11: return "Megaton Hammer";
+        case 0x12: return "Light Arrow";
+        case 0x13: return "Nayru's Love";
+        case 0x14: return "Empty Bottle";
+        case 0x15: return "Red Potion";
+        case 0x16: return "Green Potion";
+        case 0x17: return "Blue Potion";
+        case 0x18: return "Fairy";
+        case 0x19: return "Fish";
+        case 0x1A: return "Lon Lon Milk";
+        case 0x1B: return "Ruto's Letter";
+        case 0x1C: return "Blue Fire";
+        case 0x1D: return "Bug";
+        case 0x1E: return "Big Poe";
+        case 0x1F: return "Lon Lon Milk (Half)";
+        case 0x20: return "Poe";
+        case 0x21: return "Weird Egg";
+        case 0x22: return "Cucco";
+        case 0x23: return "Zelda's Letter";
+        case 0x24: return "Keaton Mask";
+        case 0x25: return "Skull Mask";
+        case 0x26: return "Spooky Mask";
+        case 0x27: return "Bunny Hood";
+        case 0x28: return "Goron Mask";
+        case 0x29: return "Zora Mask";
+        case 0x2A: return "Gerudo Mask";
+        case 0x2B: return "Mask of Truth";
+        case 0x2C: return "SOLD OUT";
+        case 0x2D: return "Pocket Egg";
+        case 0x2E: return "Pocket Cucco";
+        case 0x2F: return "Cojiro";
+        case 0x30: return "Odd Mushroom";
+        case 0x31: return "Odd Potion";
+        case 0x32: return "Poacher's Saw";
+        case 0x33: return "Broken Goron's Sword";
+        case 0x34: return "Prescription";
+        case 0x35: return "Eyeball Frog";
+        case 0x36: return "Eye Drops";
+        case 0x37: return "Claim Check";
+        default: return "";
+    }
+}
+
+float TextWidth(const char* text, float fs) {
+    return ImGui::CalcTextSize(text).x * fs / ImGui::GetFontSize();
+}
+
+// Texto centralizado em 'center' (horizontal e vertical), com sombra escura.
+void DrawTextCentered(ImDrawList* dl, const char* text, ImVec2 center, float fs, ImU32 col) {
+    const ImVec2 p(center.x - TextWidth(text, fs) * 0.5f, center.y - fs * 0.5f);
+    const ImU32 shadow = IM_COL32(0, 0, 0, (col >> IM_COL32_A_SHIFT) & 0xFF);
+    const float off = fmaxf(1.0f, fs * 0.05f);
+    dl->AddText(ImGui::GetFont(), fs, ImVec2(p.x + off, p.y + off), shadow, text);
+    dl->AddText(ImGui::GetFont(), fs, p, col, text);
+}
+
 } // namespace
 
 void RemakeControlsOverlay_Draw() {
@@ -91,7 +168,7 @@ void RemakeControlsOverlay_Draw() {
     const float H = vp->Size.y;
 
     // Fundo escurecido (o desfoque vem numa etapa própria)
-    dl->AddRectFilled(vp->Pos, ImVec2(vp->Pos.x + W, vp->Pos.y + H), IM_COL32(0, 0, 0, (int)(150.0f * sFade)));
+    dl->AddRectFilled(vp->Pos, ImVec2(vp->Pos.x + W, vp->Pos.y + H), IM_COL32(0, 0, 0, (int)(165.0f * sFade)));
 
     // Itens do inventário que servem para a idade atual, na ordem dos slots
     int slots[ARRAY_COUNT(gSaveContext.inventory.items)];
@@ -132,17 +209,18 @@ void RemakeControlsOverlay_Draw() {
         sScroll -= (float)count;
     }
 
+    // Medidas proporcionais à altura da tela (valores tirados da imagem de referência, 1080p)
     const float cx = vp->Pos.x + W * 0.5f;
-    const float cy = vp->Pos.y + H * 0.5f;
-    const float iconBase = fminf(W, H) * 0.085f;
-    const float spacing = iconBase * 1.45f;
+    const float cy = vp->Pos.y + H * 0.47f;
+    const float slotBase = H * 0.134f; // lado do slot comum
+    const float spacing = H * 0.213f;  // distância entre os centros dos slots
 
-    auto drawItem = [&](int pos) {
+    auto drawSlot = [&](int pos) {
         const int idx = ((pos % count) + count) % count;
         const int item = gSaveContext.inventory.items[slots[idx]];
         const float d = fabsf((float)pos - sScroll);
         const float focus = fmaxf(0.0f, 1.0f - d); // 1 = no centro, 0 = a um item ou mais de distância
-        float alpha = 0.40f + 0.60f * focus;
+        float alpha = 0.55f + 0.45f * focus;
         if (d > 2.0f) {
             alpha *= fmaxf(0.0f, 3.0f - d); // some nas pontas da faixa
         }
@@ -151,32 +229,58 @@ void RemakeControlsOverlay_Draw() {
             return;
         }
 
-        const float size = iconBase * (1.0f + 0.6f * focus);
+        const float size = slotBase * (1.0f + 0.12f * focus);
+        const float half = size * 0.5f;
         const ImVec2 c(cx + ((float)pos - sScroll) * spacing, cy);
+        const ImVec2 mn(c.x - half, c.y - half);
+        const ImVec2 mx(c.x + half, c.y + half);
+        const float round = size * 0.05f;
 
-        // Disco escuro atrás do ícone; o selecionado ganha um anel branco
-        dl->AddCircleFilled(c, size * 0.62f, IM_COL32(18, 22, 36, (int)(200.0f * alpha)), 40);
+        // Preenchimento: marrom escuro no slot comum, dourado claro no selecionado
+        const int fr = (int)(46.0f + 130.0f * focus);
+        const int fg = (int)(36.0f + 102.0f * focus);
+        const int fb = (int)(24.0f + 42.0f * focus);
+        dl->AddRectFilled(mn, mx, IM_COL32(fr, fg, fb, (int)(235.0f * alpha)), round);
+
+        // Brilho em volta do selecionado
         if (focus > 0.01f) {
-            dl->AddCircle(c, size * 0.66f, IM_COL32(255, 255, 255, (int)(255.0f * focus * sFade)), 48, 3.0f);
+            for (int g = 3; g >= 1; g--) {
+                const float o = (float)g * size * 0.025f;
+                dl->AddRect(ImVec2(mn.x - o, mn.y - o), ImVec2(mx.x + o, mx.y + o),
+                            IM_COL32(255, 255, 255, (int)(34.0f * focus * sFade)), round + o, 0, 2.0f);
+            }
         }
 
+        // Moldura: borda escura, filete interno e cantos ornamentados
+        const float inset = size * 0.04f;
+        dl->AddRect(mn, mx, IM_COL32(18, 13, 8, (int)(255.0f * alpha)), round, 0, 2.0f);
+        dl->AddRect(ImVec2(mn.x + inset, mn.y + inset), ImVec2(mx.x - inset, mx.y - inset),
+                    IM_COL32(96, 78, 50, (int)(170.0f * alpha)), round, 0, 1.0f);
+        const float cs = size * 0.07f;
+        const ImU32 cornerCol = IM_COL32(120, 98, 62, (int)(220.0f * alpha));
+        dl->AddRectFilled(ImVec2(mn.x + inset, mn.y + inset), ImVec2(mn.x + inset + cs, mn.y + inset + cs), cornerCol);
+        dl->AddRectFilled(ImVec2(mx.x - inset - cs, mn.y + inset), ImVec2(mx.x - inset, mn.y + inset + cs), cornerCol);
+        dl->AddRectFilled(ImVec2(mn.x + inset, mx.y - inset - cs), ImVec2(mn.x + inset + cs, mx.y - inset), cornerCol);
+        dl->AddRectFilled(ImVec2(mx.x - inset - cs, mx.y - inset - cs), ImVec2(mx.x - inset, mx.y - inset), cornerCol);
+        if (focus > 0.01f) {
+            dl->AddRect(mn, mx, IM_COL32(255, 255, 255, (int)(255.0f * focus * sFade)), round, 0, 3.0f);
+        }
+
+        // Ícone do item
         ImTextureID tex = GetItemTexture(item);
         if (tex) {
-            dl->AddImage(tex, ImVec2(c.x - size * 0.5f, c.y - size * 0.5f),
-                         ImVec2(c.x + size * 0.5f, c.y + size * 0.5f), ImVec2(0, 0), ImVec2(1, 1),
-                         IM_COL32(255, 255, 255, (int)(255.0f * alpha)));
+            const float is = size * 0.74f;
+            dl->AddImage(tex, ImVec2(c.x - is * 0.5f, c.y - is * 0.5f), ImVec2(c.x + is * 0.5f, c.y + is * 0.5f),
+                         ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, (int)(255.0f * alpha)));
         }
 
-        // Quantidade embaixo do ícone
+        // Quantidade no canto inferior direito do slot
         int ammo = 0;
         bool full = false;
         if (GetAmmoInfo(item, &ammo, &full)) {
             char buf[8];
             snprintf(buf, sizeof(buf), "%d", ammo);
-            const float baseFs = ImGui::GetFontSize();
-            const float fs = baseFs * (1.1f + 0.7f * focus);
-            const float tw = ImGui::CalcTextSize(buf).x * fs / baseFs;
-            const ImVec2 p(c.x - tw * 0.5f, c.y + size * 0.62f + 4.0f);
+            const float fs = size * 0.27f;
             const int a = (int)(255.0f * alpha);
             ImU32 col = IM_COL32(255, 255, 255, a);
             if (ammo == 0) {
@@ -184,12 +288,12 @@ void RemakeControlsOverlay_Draw() {
             } else if (full) {
                 col = IM_COL32(120, 255, 120, a);
             }
-            dl->AddText(ImGui::GetFont(), fs, ImVec2(p.x + 1.0f, p.y + 1.0f), IM_COL32(0, 0, 0, a), buf);
-            dl->AddText(ImGui::GetFont(), fs, p, col, buf);
+            const float tw = TextWidth(buf, fs);
+            DrawTextCentered(dl, buf, ImVec2(mx.x - size * 0.07f - tw * 0.5f, mx.y - size * 0.07f - fs * 0.5f), fs, col);
         }
     };
 
-    // Até 7 itens visíveis (menos se o inventário tiver menos); o do centro é desenhado por último
+    // Até 7 slots visíveis (menos se o inventário tiver menos); o do centro é desenhado por último
     const int base = (int)roundf(sScroll);
     int lo = -3;
     int hi = 3;
@@ -199,12 +303,70 @@ void RemakeControlsOverlay_Draw() {
     }
     for (int k = lo; k <= hi; k++) {
         if (fabsf((float)(base + k) - sScroll) >= 0.5f) {
-            drawItem(base + k);
+            drawSlot(base + k);
         }
     }
     for (int k = lo; k <= hi; k++) {
         if (fabsf((float)(base + k) - sScroll) < 0.5f) {
-            drawItem(base + k);
+            drawSlot(base + k);
+        }
+    }
+
+    const int fadeA = (int)(255.0f * sFade);
+
+    // Setas dos dois lados do slot selecionado
+    {
+        const float ax = slotBase * 0.80f;
+        const float aw = slotBase * 0.08f;
+        const float ah = slotBase * 0.20f;
+        const ImU32 col = IM_COL32(255, 255, 255, fadeA);
+        dl->AddTriangleFilled(ImVec2(cx - ax - aw, cy), ImVec2(cx - ax, cy - ah * 0.5f), ImVec2(cx - ax, cy + ah * 0.5f),
+                              col);
+        dl->AddTriangleFilled(ImVec2(cx + ax + aw, cy), ImVec2(cx + ax, cy - ah * 0.5f), ImVec2(cx + ax, cy + ah * 0.5f),
+                              col);
+    }
+
+    // Nome do item selecionado
+    const char* name = GetItemName(gSaveContext.inventory.items[slots[sel]]);
+    if (name[0] != '\0') {
+        DrawTextCentered(dl, name, ImVec2(cx, cy + H * 0.206f), H * 0.052f, IM_COL32(255, 255, 255, fadeA));
+    }
+
+    // Barra de posição: trilho com um marcador que anda conforme o item selecionado
+    {
+        const float bw = H * 0.14f;
+        const float bh = H * 0.008f;
+        const float by = cy + H * 0.262f;
+        const float left = cx - bw * 0.5f;
+        dl->AddRectFilled(ImVec2(left, by - bh * 0.5f), ImVec2(left + bw, by + bh * 0.5f),
+                          IM_COL32(255, 255, 255, (int)(45.0f * sFade)), bh * 0.5f);
+        const float tw = bw * 0.2f;
+        float t = 0.5f;
+        if (count > 1) {
+            t = fminf(1.0f, fmaxf(0.0f, sScroll / (float)(count - 1)));
+        }
+        const float tx = left + t * (bw - tw);
+        dl->AddRectFilled(ImVec2(tx, by - bh * 0.5f), ImVec2(tx + tw, by + bh * 0.5f), IM_COL32(240, 200, 110, fadeA),
+                          bh * 0.5f);
+    }
+
+    // Dica "Select" com as teclas L e R
+    {
+        const char* label = "Select";
+        const float fs = H * 0.028f;
+        const float r = H * 0.014f;
+        const float gap = H * 0.012f;
+        const float between = H * 0.006f;
+        const float tw = TextWidth(label, fs);
+        const float total = tw + gap + 4.0f * r + between;
+        const float y = cy + H * 0.308f;
+        const float startX = cx - total * 0.5f;
+        DrawTextCentered(dl, label, ImVec2(startX + tw * 0.5f, y), fs, IM_COL32(255, 255, 255, fadeA));
+        const char* keys[2] = { "L", "R" };
+        for (int i = 0; i < 2; i++) {
+            const ImVec2 kc(startX + tw + gap + r + (float)i * (2.0f * r + between), y);
+            dl->AddCircleFilled(kc, r, IM_COL32(255, 255, 255, (int)(235.0f * sFade)), 24);
+            DrawTextCentered(dl, keys[i], kc, r * 1.45f, IM_COL32(30, 30, 30, fadeA));
         }
     }
 }

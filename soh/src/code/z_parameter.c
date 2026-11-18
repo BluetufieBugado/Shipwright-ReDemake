@@ -82,6 +82,9 @@ extern MessageTableEntry* sGerMessageEntryTablePtr;
 extern MessageTableEntry* sFraMessageEntryTablePtr;
 extern MessageTableEntry* sJpnMessageEntryTablePtr;
 
+// Remake controls (SoH): definido em z_play.c; 1 enquanto o carrossel de itens congela o mundo
+extern s32 gRemakeCarouselFrozen;
+
 #define DO_ACTION_TEX_WIDTH() 48
 #define DO_ACTION_TEX_HEIGHT() 16
 #define DO_ACTION_TEX_SIZE() ((DO_ACTION_TEX_WIDTH() * DO_ACTION_TEX_HEIGHT()) / 2)
@@ -6022,7 +6025,13 @@ void Interface_Draw(PlayState* play) {
             !Play_InCsMode(play) && (gSaveContext.minigameState != 1) && (play->shootingGalleryStatus <= 1) &&
             !((play->sceneNum == SCENE_BOMBCHU_BOWLING_ALLEY) && Flags_GetSwitch(play, 0x38))) {
             timerId = TIMER_ID_MAIN;
-            switch (gSaveContext.timerState) {
+            // Remake controls (SoH): com o carrossel aberto a contagem dos timers para (cai direto no caso que só
+            // dá break), mas o timer continua sendo desenhado. Sem timer principal ligado, o que aparece é o
+            // sub-timer, então o timerId (posição na tela) precisa continuar apontando para ele.
+            if (gRemakeCarouselFrozen && (gSaveContext.timerState == TIMER_STATE_OFF)) {
+                timerId = TIMER_ID_SUB;
+            }
+            switch (gRemakeCarouselFrozen ? TIMER_STATE_UP_FREEZE : gSaveContext.timerState) {
                 case TIMER_STATE_ENV_HAZARD_INIT:
                     sTimerStateTimer = 20;
                     sTimerNextSecondTimer = 20;
