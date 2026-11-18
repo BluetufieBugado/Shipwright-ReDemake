@@ -212,11 +212,14 @@ extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
     const bool nextPress = CHECK_BTN_ANY(input->press.button, BTN_CRIGHT);
     const bool held = CHECK_BTN_ANY(input->cur.button, BTN_CLEFT | BTN_CRIGHT);
 
+    // O toque que abre o carrossel só abre: o item em foco continua o mesmo. Os toques seguintes é que trocam.
+    bool justOpened = false;
     if (!sCarouselOpen) {
         if (!(prevPress || nextPress)) {
             return 0;
         }
-        sCarouselOpen = true; // abre já trocando o item uma vez (toque rápido = troca rápida)
+        sCarouselOpen = true;
+        justOpened = true;
     }
 
     if (!held) {
@@ -228,6 +231,10 @@ extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
     if (CHECK_BTN_ANY(input->press.button, BTN_B)) {
         CVarSetInteger(CVAR_REMAKE_SORT_NAME, RemakeControls_IsSortByType() ? 0 : 1);
         PlayCarouselCursorSound();
+    }
+
+    if (justOpened) {
+        return 1;
     }
 
     if (prevPress) {
