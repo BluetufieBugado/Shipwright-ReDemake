@@ -96,7 +96,7 @@ static bool CanUseCarousel(PlayState* play) {
 
 // Som de cursor do menu de pausa, tocado a cada troca de item no carrossel.
 static void PlayCarouselCursorSound() {
-    Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+    Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
