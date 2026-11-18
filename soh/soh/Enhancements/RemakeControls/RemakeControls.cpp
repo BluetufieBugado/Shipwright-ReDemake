@@ -93,6 +93,12 @@ static bool CanUseCarousel(PlayState* play) {
            play->transitionTrigger == TRANS_TRIGGER_OFF && !Player_InCsMode(play);
 }
 
+// Som de cursor do menu de pausa, tocado a cada troca de item no carrossel.
+static void PlayCarouselCursorSound() {
+    Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+}
+
 // Chamada por Play_Update (z_play.c), logo depois de calcular isPaused.
 // Retorna 1 se o mundo deve ficar parado neste frame.
 extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
@@ -120,9 +126,13 @@ extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
     }
 
     if (prevPress) {
-        CycleFocusedItem(play, -1);
+        if (CycleFocusedItem(play, -1)) {
+            PlayCarouselCursorSound();
+        }
     } else if (nextPress) {
-        CycleFocusedItem(play, 1);
+        if (CycleFocusedItem(play, 1)) {
+            PlayCarouselCursorSound();
+        }
     }
     return 1;
 }

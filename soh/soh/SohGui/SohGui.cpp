@@ -161,6 +161,10 @@ class ThirdPersonAimReticleWindow final : public Ship::GuiWindow {
         const bool enabled = CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAim"), 1) != 0 &&
                              CVarGetInteger(CVAR_ENHANCEMENT("ThirdPersonAimReticle"), 1) != 0;
         const bool menuOpen = mSohMenu != nullptr && mSohMenu->IsVisible();
+        // Remake item carousel open: hide the reticle immediately so it does not draw over the carousel.
+        if (RemakeControls_IsCarouselOpen()) {
+            return;
+        }
         const bool aiming = enabled && !menuOpen && Player_IsThirdPersonAiming() != 0;
         int ammo = -1;
         int score = -1;
