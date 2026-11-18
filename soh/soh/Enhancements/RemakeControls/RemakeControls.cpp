@@ -8,6 +8,7 @@ extern "C" {
 #include "z64.h"
 #include "macros.h"
 #include "variables.h"
+#include "functions.h"
 extern PlayState* gPlayState;
 
 // Definidas em z_parameter.c
