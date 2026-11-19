@@ -89,6 +89,7 @@ int RemakeControls_HideOriginalCButtons(void);
 void RemakeControls_SetCornerHidden(int hidden);
 int RemakeControls_IsEnabled(void);
 int RemakeControls_DpadEquipsActive(void);
+void RemakeControls_SetNaviIcon(int x, int y, int alpha, int lit);
 
 #define DO_ACTION_TEX_WIDTH() 48
 #define DO_ACTION_TEX_HEIGHT() 16
@@ -4279,7 +4280,7 @@ void Interface_DrawItemButtons(PlayState* play) {
 
     if (interfaceCtx->naviCalling && (play->pauseCtx.state == 0) && (play->pauseCtx.debugState == 0) &&
         (play->csCtx.state == CS_STATE_IDLE)) {
-        if (!sCUpInvisible) {
+        if (!sCUpInvisible && !RemakeControls_IsEnabled()) {
             // C-Up Button Texture, Color & Label (Navi Text)
             gDPPipeSync(OVERLAY_DISP++);
 
@@ -5703,6 +5704,12 @@ void Interface_Draw(PlayState* play) {
                 gDPSetCombineLERP(OVERLAY_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0,
                                   PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0);
                 Interface_DrawAmmoCount(play, 4, interfaceCtx->dpadUpAlpha);
+            }
+
+            // No modo moderno o D-Pad cima chama a Navi. O ícone dela é desenhado pelo overlay
+            // (RemakeControlsOverlay.cpp), no lugar do slot de item: centro do slot = D-Pad + (15, 0).
+            if (RemakeControls_IsEnabled()) {
+                RemakeControls_SetNaviIcon(DpadPosX + 15, DpadPosY, dpadAlpha, interfaceCtx->naviCalling);
             }
 
             // DPad-Down Button Icon & Ammo Count

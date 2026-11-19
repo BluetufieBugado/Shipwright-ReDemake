@@ -25,6 +25,13 @@ float sScroll = 0.0f;       // posição (em itens) que a faixa está mostrando,
 bool sScrollValid = false;  // false = a próxima abertura começa já no item atual, sem deslizar
 bool sLastSortByType = false; // para detectar a troca de ordenação e não deslizar pela faixa embaralhada
 
+// Ícone da Navi no D-Pad cima (preenchido por RemakeControls_SetNaviIcon, chamada pelo Interface_Draw)
+int sNaviX = 0;            // centro do slot, em unidades do HUD (320x240)
+int sNaviY = 0;
+int sNaviAlpha = 0;        // alpha do D-Pad (0-255)
+bool sNaviCalling = false; // naviCalling do jogo
+float sNaviLit = 0.0f;     // 0 = apagada, 1 = acesa (anima suave entre os dois)
+
 std::shared_ptr<Fast::Fast3dGui> GetFastGui() {
     return std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
 }
@@ -242,10 +249,103 @@ void DrawCornerItem() {
     }
 }
 
+// Monta um polígono em forma de elipse girada (para as asas da Navi).
+void MakeEllipse(ImVec2* pts, int n, ImVec2 c, float rx, float ry, float rot) {
+    const float cr = cosf(rot);
+    const float sr = sinf(rot);
+    for (int i = 0; i < n; i++) {
+        const float t = 6.2831853f * (float)i / (float)n;
+        const float x = rx * cosf(t);
+        const float y = ry * sinf(t);
+        pts[i] = ImVec2(c.x + x * cr - y * sr, c.y + x * sr + y * cr);
+    }
+}
+
+// Ícone da Navi no slot do D-Pad cima: apagado (cinza azulado) quando ela não chama, aceso (branco azulado, com
+// brilho) quando ela faz o "Hey, Listen". Segue a posição do D-Pad do HUD e a opacidade dele.
+void DrawNaviIcon() {
+    // Ajuste fino
+    const float kSizeUnits = 16.0f; // lado do slot (igual ao dos outros itens do D-Pad), em unidades do HUD
+    const float kScale = 1.0f;      // multiplicador do tamanho do desenho
+    const float kOffsetX = 0.0f;    // deslocamento extra, em unidades do HUD
+    const float kOffsetY = 0.0f;
+
+    if (!RemakeControls_IsEnabled() || gPlayState == nullptr) {
+        return;
+    }
+    if (gSaveContext.gameMode != GAMEMODE_NORMAL) {
+        return;
+    }
+    if (gPlayState->pauseCtx.state != 0 || gPlayState->pauseCtx.debugState != 0) {
+        return; // menu de pausa aberto: o D-Pad do HUD também some
+    }
+    if (sNaviX < -1000) {
+        return; // D-Pad escondido em Cosmetics
+    }
+    const float hudAlpha = (float)sNaviAlpha / 255.0f;
+    if (hudAlpha <= 0.01f) {
+        return;
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    const float dt = fminf(io.DeltaTime, 0.1f);
+    const float target = sNaviCalling ? 1.0f : 0.0f;
+    sNaviLit += (target - sNaviLit) * fminf(1.0f, dt * 14.0f);
+    const float lit = sNaviLit;
+    // Pulso leve enquanto está acesa
+    const float pulse = 1.0f - 0.12f * lit * (0.5f + 0.5f * sinf((float)ImGui::GetTime() * 9.0f));
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList(); // atrás do menu do SoH, como o resto do HUD
+    const float W = vp->Size.x;
+    const float H = vp->Size.y;
+    // 1 unidade do HUD = H/240 pixels; x = 160 é o centro da tela
+    const float unit = H / 240.0f;
+    const float s = kSizeUnits * kScale * unit;
+    const ImVec2 c(vp->Pos.x + W * 0.5f + ((float)sNaviX + kOffsetX - 160.0f) * unit,
+                   vp->Pos.y + ((float)sNaviY + kOffsetY) * unit);
+
+    auto mix = [&](int dim, int on) { return dim + (int)((float)(on - dim) * lit); };
+
+    // Brilho em volta (só quando acesa)
+    if (lit > 0.02f) {
+        const float glowA = lit * pulse * hudAlpha;
+        dl->AddCircleFilled(c, s * 0.62f, IM_COL32(110, 190, 255, (int)(22.0f * glowA)), 32);
+        dl->AddCircleFilled(c, s * 0.46f, IM_COL32(130, 205, 255, (int)(40.0f * glowA)), 32);
+        dl->AddCircleFilled(c, s * 0.33f, IM_COL32(170, 225, 255, (int)(70.0f * glowA)), 32);
+    }
+
+    // Quatro asas: um par de cima (maior) e um par de baixo (menor)
+    const int wingA = (int)((float)mix(110, 215) * hudAlpha);
+    const ImU32 wingCol = IM_COL32(mix(85, 215), mix(100, 240), mix(120, 255), wingA);
+    ImVec2 pts[14];
+    MakeEllipse(pts, 14, ImVec2(c.x - s * 0.36f, c.y - s * 0.12f), s * 0.30f, s * 0.13f, 0.46f);
+    dl->AddConvexPolyFilled(pts, 14, wingCol);
+    MakeEllipse(pts, 14, ImVec2(c.x + s * 0.36f, c.y - s * 0.12f), s * 0.30f, s * 0.13f, -0.46f);
+    dl->AddConvexPolyFilled(pts, 14, wingCol);
+    MakeEllipse(pts, 14, ImVec2(c.x - s * 0.30f, c.y + s * 0.10f), s * 0.20f, s * 0.09f, -0.40f);
+    dl->AddConvexPolyFilled(pts, 14, wingCol);
+    MakeEllipse(pts, 14, ImVec2(c.x + s * 0.30f, c.y + s * 0.10f), s * 0.20f, s * 0.09f, 0.40f);
+    dl->AddConvexPolyFilled(pts, 14, wingCol);
+
+    // Corpo: halo e núcleo
+    dl->AddCircleFilled(c, s * 0.26f, IM_COL32(mix(60, 130), mix(80, 200), mix(110, 255), (int)((float)mix(70, 170) * hudAlpha)), 24);
+    dl->AddCircleFilled(c, s * 0.15f, IM_COL32(mix(110, 255), mix(130, 255), mix(160, 255), (int)(255.0f * hudAlpha)), 20);
+}
+
 } // namespace
+
+// Chamada por Interface_Draw (z_parameter.c) a cada frame.
+extern "C" void RemakeControls_SetNaviIcon(int x, int y, int alpha, int lit) {
+    sNaviX = x;
+    sNaviY = y;
+    sNaviAlpha = alpha < 0 ? 0 : (alpha > 255 ? 255 : alpha);
+    sNaviCalling = lit != 0;
+}
 
 void RemakeControlsOverlay_Draw() {
     DrawCornerItem(); // desenhado antes do carrossel: o escurecimento do carrossel passa por cima
+    DrawNaviIcon();
     const ImGuiIO& io = ImGui::GetIO();
     const float dt = fminf(io.DeltaTime, 0.1f);
 

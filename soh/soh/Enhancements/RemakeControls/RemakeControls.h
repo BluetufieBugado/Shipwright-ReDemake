@@ -10,6 +10,10 @@ int RemakeControls_DpadEquipsActive(void);
 int RemakeControls_HideOriginalCButtons(void);
 // Chamada por Interface_Draw a cada frame: o HUD está escondendo os botões C neste momento (aba Quest/Mapa)?
 void RemakeControls_SetCornerHidden(int hidden);
+// Chamada por Interface_Draw a cada frame (modo moderno): posição do slot do D-Pad cima, em unidades do HUD
+// (320x240 do N64, já com a posição do D-Pad escolhida em Cosmetics), o alpha do D-Pad (0-255) e se a Navi está
+// chamando (interfaceCtx->naviCalling). O ícone da Navi é desenhado em RemakeControlsOverlay.cpp.
+void RemakeControls_SetNaviIcon(int x, int y, int alpha, int lit);
 }
 bool RemakeControls_IsCornerHidden();
 
