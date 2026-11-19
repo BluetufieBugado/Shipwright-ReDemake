@@ -1,6 +1,7 @@
 #include "SohMenu.h"
 
 #include <imgui.h>
+#include <cmath>
 #include <libultraship/bridge/consolevariablebridge.h>
 
 #include "soh/cvar_prefixes.h"
@@ -18,6 +19,216 @@ using namespace UIWidgets;
 static bool MicDisabled() {
     return !CVarGetInteger(CVAR_MIC("Microphone"), 0);
 }
+
+static bool ModernControlsDisabled() {
+    return !CVarGetInteger(CVAR_ENHANCEMENT("RemakeControls"), 1);
+}
+
+namespace {
+
+// ---------------------------------------------------------------- Controls guide
+// Desenho do controle (estilo N64 "moderno") + tabela explicando cada botão com o modo moderno ligado.
+// Tudo desenhado com ImDrawList, sem imagens externas. Coordenadas de referência: 380 x 320.
+constexpr float kGuideRefW = 380.0f;
+constexpr float kGuideRefH = 320.0f;
+
+struct GuideEntry {
+    const char* button;
+    const char* text;
+    bool changed; // função nova com o modo moderno (anel ciano no desenho)
+    bool planned; // ainda não implementado (texto apagado)
+};
+
+// Edite os textos aqui.
+const GuideEntry kGuideEntries[] = {
+    { "Z", "Aim at a target and raise the shield.", true, false },
+    { "L", "Put the sword away.", false, false },
+    { "R", "Open the map. (coming soon)", true, true },
+    { "C-Up", "Use the focused item (shown in the top-right corner).", true, false },
+    { "C-Left / C-Right",
+      "Hold to open the item carousel (the game pauses). Press again to pick the previous / next item, release to "
+      "close.",
+      true, false },
+    { "C-Down", "Jump. (coming soon)", true, true },
+    { "D-Pad Up", "Call Navi.", true, false },
+    { "D-Pad Left / Right / Down", "Free item slots. Choose the items in the pause menu.", true, false },
+    { "B", "Attack. With the carousel open, switches between Default and By Type ordering.", true, false },
+    { "A", "Context actions (talk, open, roll, ...).", false, false },
+    { "Start", "Pause menu.", false, false },
+    { "Control Stick", "Move Link.", false, false },
+};
+
+void FillRotatedEllipse(ImDrawList* dl, ImVec2 c, float rx, float ry, float rot, ImU32 col) {
+    constexpr int kSegments = 48;
+    ImVec2 pts[kSegments];
+    const float cs = std::cos(rot);
+    const float sn = std::sin(rot);
+    for (int i = 0; i < kSegments; i++) {
+        const float a = (2.0f * 3.14159265f * (float)i) / (float)kSegments;
+        const float x = std::cos(a) * rx;
+        const float y = std::sin(a) * ry;
+        pts[i] = ImVec2(c.x + x * cs - y * sn, c.y + x * sn + y * cs);
+    }
+    dl->AddConvexPolyFilled(pts, kSegments, col);
+}
+
+void DrawControllerDiagram(ImDrawList* dl, ImVec2 origin, float s) {
+    const ImU32 kBodyEdge = IM_COL32(95, 95, 100, 255);
+    const ImU32 kBody = IM_COL32(150, 150, 155, 255);
+    const ImU32 kDark = IM_COL32(62, 62, 68, 255);
+    const ImU32 kMid = IM_COL32(100, 100, 106, 255);
+    const ImU32 kWhite = IM_COL32(255, 255, 255, 255);
+    const ImU32 kAccent = IM_COL32(0, 190, 255, 255);
+
+    auto P = [&](float x, float y) { return ImVec2(origin.x + x * s, origin.y + y * s); };
+
+    auto Label = [&](ImVec2 c, const char* text) {
+        const ImVec2 ts = ImGui::CalcTextSize(text);
+        dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), kWhite, text);
+    };
+
+    auto Round = [&](float cx, float cy, float r, ImU32 fill, const char* label, bool ringed) {
+        dl->AddCircleFilled(P(cx, cy), r * s, fill);
+        if (label != nullptr) {
+            Label(P(cx, cy), label);
+        }
+        if (ringed) {
+            dl->AddCircle(P(cx, cy), (r + 4.0f) * s, kAccent, 0, 2.5f);
+        }
+    };
+
+    enum Dir { Up, Down, Left, Right };
+    auto Arrow = [&](float cx, float cy, float r, Dir d, ImU32 col) {
+        ImVec2 a, b, c;
+        switch (d) {
+            case Up:
+                a = P(cx, cy - r);
+                b = P(cx - r, cy + r * 0.7f);
+                c = P(cx + r, cy + r * 0.7f);
+                break;
+            case Down:
+                a = P(cx, cy + r);
+                b = P(cx - r, cy - r * 0.7f);
+                c = P(cx + r, cy - r * 0.7f);
+                break;
+            case Left:
+                a = P(cx - r, cy);
+                b = P(cx + r * 0.7f, cy - r);
+                c = P(cx + r * 0.7f, cy + r);
+                break;
+            default:
+                a = P(cx + r, cy);
+                b = P(cx - r * 0.7f, cy - r);
+                c = P(cx - r * 0.7f, cy + r);
+                break;
+        }
+        dl->AddTriangleFilled(a, b, c, col);
+    };
+
+    // Corpo: contorno escuro primeiro, depois o preenchimento.
+    const float edge = 3.0f;
+    dl->AddRectFilled(P(26.0f - edge, 28.0f - edge), P(354.0f + edge, 230.0f + edge), kBodyEdge, 83.0f * s);
+    FillRotatedEllipse(dl, P(78.0f, 215.0f), (50.0f + edge) * s, (88.0f + edge) * s, -0.2f, kBodyEdge);
+    FillRotatedEllipse(dl, P(302.0f, 215.0f), (50.0f + edge) * s, (88.0f + edge) * s, 0.2f, kBodyEdge);
+    dl->AddRectFilled(P(26.0f, 28.0f), P(354.0f, 230.0f), kBody, 80.0f * s);
+    FillRotatedEllipse(dl, P(78.0f, 215.0f), 50.0f * s, 88.0f * s, -0.2f, kBody);
+    FillRotatedEllipse(dl, P(302.0f, 215.0f), 50.0f * s, 88.0f * s, 0.2f, kBody);
+
+    // Gatilhos: Z (atrás), L e R.
+    dl->AddRectFilled(P(50.0f, 2.0f), P(112.0f, 20.0f), kDark, 6.0f * s);
+    Label(P(81.0f, 11.0f), "Z");
+    dl->AddRectFilled(P(62.0f, 18.0f), P(124.0f, 38.0f), kMid, 6.0f * s);
+    Label(P(93.0f, 28.0f), "L");
+    dl->AddRectFilled(P(256.0f, 18.0f), P(318.0f, 38.0f), kMid, 6.0f * s);
+    Label(P(287.0f, 28.0f), "R");
+    // Anéis dos que têm função nova (Z e R).
+    dl->AddRect(P(50.0f - 3.0f, 2.0f - 3.0f), P(112.0f + 3.0f, 20.0f + 3.0f), kAccent, 8.0f * s, 0, 2.5f);
+    dl->AddRect(P(256.0f - 3.0f, 18.0f - 3.0f), P(318.0f + 3.0f, 38.0f + 3.0f), kAccent, 8.0f * s, 0, 2.5f);
+
+    // Três botões pequenos no topo (decorativos).
+    Round(175.0f, 53.0f, 8.0f, kMid, nullptr, false);
+    Round(205.0f, 53.0f, 8.0f, kMid, nullptr, false);
+    Round(238.0f, 53.0f, 8.0f, kMid, nullptr, false);
+
+    // Analógico.
+    Round(95.0f, 98.0f, 34.0f, kDark, nullptr, false);
+    Round(95.0f, 98.0f, 26.0f, IM_COL32(175, 175, 180, 255), nullptr, false);
+    Round(95.0f, 98.0f, 17.0f, IM_COL32(205, 205, 210, 255), nullptr, false);
+
+    // D-Pad.
+    dl->AddRectFilled(P(134.0f, 149.0f), P(182.0f, 167.0f), kDark, 3.0f * s);
+    dl->AddRectFilled(P(149.0f, 134.0f), P(167.0f, 182.0f), kDark, 3.0f * s);
+    const ImU32 kDpadArrow = IM_COL32(150, 150, 156, 255);
+    Arrow(158.0f, 141.0f, 4.0f, Up, kDpadArrow);
+    Arrow(158.0f, 175.0f, 4.0f, Down, kDpadArrow);
+    Arrow(142.0f, 158.0f, 4.0f, Left, kDpadArrow);
+    Arrow(174.0f, 158.0f, 4.0f, Right, kDpadArrow);
+    dl->AddCircle(P(158.0f, 158.0f), 33.0f * s, kAccent, 0, 2.5f);
+
+    // Start, B e A.
+    Round(208.0f, 92.0f, 15.0f, IM_COL32(215, 40, 40, 255), "S", false);
+    Round(248.0f, 130.0f, 14.0f, IM_COL32(40, 150, 70, 255), "B", true);
+    Round(285.0f, 160.0f, 15.0f, IM_COL32(50, 90, 185, 255), "A", false);
+
+    // Botões C (amarelos, losango).
+    const ImU32 kYellow = IM_COL32(240, 180, 40, 255);
+    const ImU32 kArrowDark = IM_COL32(70, 50, 10, 255);
+    Round(318.0f, 70.0f, 12.0f, kYellow, nullptr, true);
+    Round(292.0f, 96.0f, 12.0f, kYellow, nullptr, true);
+    Round(343.0f, 96.0f, 12.0f, kYellow, nullptr, true);
+    Round(318.0f, 122.0f, 12.0f, kYellow, nullptr, true);
+    Arrow(318.0f, 70.0f, 6.0f, Up, kArrowDark);
+    Arrow(292.0f, 96.0f, 6.0f, Left, kArrowDark);
+    Arrow(343.0f, 96.0f, 6.0f, Right, kArrowDark);
+    Arrow(318.0f, 122.0f, 6.0f, Down, kArrowDark);
+}
+
+void DrawControlsGuide() {
+    const ImVec4 accent = ImGui::ColorConvertU32ToFloat4(IM_COL32(0, 190, 255, 255));
+    const float s = (ImGui::GetFontSize() / 16.0f) * 0.85f;
+    const ImVec2 size(kGuideRefW * s, kGuideRefH * s);
+    const bool sideBySide = ImGui::GetContentRegionAvail().x >= size.x + ImGui::GetFontSize() * 24.0f;
+
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(size);
+    DrawControllerDiagram(ImGui::GetWindowDrawList(), origin, s);
+
+    if (sideBySide) {
+        ImGui::SameLine();
+    } else {
+        ImGui::Spacing();
+    }
+
+    ImGui::BeginGroup();
+    ImGui::PushStyleColor(ImGuiCol_Text, accent);
+    ImGui::TextWrapped("Buttons with a cyan ring have a new function with Modern Item Switching.");
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    if (ImGui::BeginTable("##RemakeControlsGuide", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 9.0f);
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
+        for (const GuideEntry& e : kGuideEntries) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::PushStyleColor(ImGuiCol_Text, e.changed ? accent : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+            ImGui::TextWrapped("%s", e.button);
+            ImGui::PopStyleColor();
+            ImGui::TableNextColumn();
+            if (e.planned) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            }
+            ImGui::TextWrapped("%s", e.text);
+            if (e.planned) {
+                ImGui::PopStyleColor();
+            }
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndGroup();
+}
+
+} // namespace
 
 void SohMenu::AddMenuReDemake() {
     // Padrões do ReDemake: só aplicados se o jogador nunca mexeu na opção (CVar ainda não existe).
@@ -113,5 +324,13 @@ void SohMenu::AddMenuReDemake() {
             "are no longer drawn on the HUD. Turn this off to get the original C button behavior back. "
             "Requires the controller bindings described in the project notes (ZR on C-Up, L on C-Left, "
             "R on C-Right)."));
+
+    AddWidget(controlsPath, "Controls Guide", WIDGET_SEPARATOR_TEXT)
+        .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); });
+
+    AddWidget(controlsPath, "ControlsGuideDiagram", WIDGET_CUSTOM)
+        .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); })
+        .CustomFunction([](WidgetInfo& info) { DrawControlsGuide(); })
+        .HideInSearch(true);
 }
 } // namespace SohGui

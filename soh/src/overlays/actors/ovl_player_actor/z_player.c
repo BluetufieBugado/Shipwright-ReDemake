@@ -5320,6 +5320,9 @@ s32 Player_PosVsWallLineTest(PlayState* play, Player* this, Vec3f* offset, Colli
     return BgCheck_EntityLineTest1(&play->colCtx, &posA, &posB, posResult, wallPoly, true, false, false, true, bgId);
 }
 
+extern u8 gSeamlessDoorExit;
+extern s16 gSeamlessDoorDelay;
+
 s32 Player_ActionHandler_1(Player* this, PlayState* play) {
     DoorShutter* doorShutter;
     EnDoor* door; // Can also be DoorKiller*
@@ -5460,6 +5463,13 @@ s32 Player_ActionHandler_1(Player* this, PlayState* play) {
                         if (Player_HandleExitsAndVoids(play, this, groundPoly, BGCHECK_SCENE)) {
                             gSaveContext.entranceSpeed = 2.0f;
                             gSaveContext.entranceSound = NA_SE_OC_DOOR_OPEN;
+
+                            // Seamless Doors: marca esta troca de cena como "por porta" (ver z_play.c)
+                            if (CVarGetInteger(CVAR_ENHANCEMENT("SeamlessDoors"), 1)) {
+                                gSeamlessDoorExit = true;
+                                gSeamlessDoorDelay =
+                                    CLAMP(CVarGetInteger(CVAR_ENHANCEMENT("SeamlessDoorsDelayTicks"), 8), 0, 30);
+                            }
                         }
                     } else {
                         Camera_ChangeDoorCam(Play_GetCamera(play, CAM_ID_MAIN), doorActor,

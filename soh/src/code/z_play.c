@@ -87,6 +87,10 @@ void Play_SetShopBrowsingViewpoint(PlayState* play) {
     }
 }
 
+// Seamless Doors: ligados por Player_ActionHandler_1 (z_player.c) quando o Link abre uma porta de saída de cena.
+u8 gSeamlessDoorExit = false;  // true enquanto dura a troca de cena iniciada por uma porta (saída + entrada)
+s16 gSeamlessDoorDelay = 0;    // ticks de espera antes de começar o fade, para a porta abrir e o Link entrar
+
 void Gameplay_SetupTransition(PlayState* play, s32 transitionType) {
     TransitionContext* transitionCtx = &play->transitionCtx;
 
@@ -704,7 +708,15 @@ void Play_Update(PlayState* play) {
 
     if (FrameAdvance_Update(&play->frameAdvCtx, &input[1])) {
         if ((play->transitionMode == TRANS_MODE_OFF) && (play->transitionTrigger != TRANS_TRIGGER_OFF)) {
-            play->transitionMode = TRANS_MODE_SETUP;
+            if (gSeamlessDoorExit && (play->transitionTrigger == TRANS_TRIGGER_START) && (gSeamlessDoorDelay > 0)) {
+                // Seamless Doors: deixa a porta abrir e o Link começar a atravessar antes do fade
+                gSeamlessDoorDelay--;
+            } else {
+                play->transitionMode = TRANS_MODE_SETUP;
+            }
+        } else if ((play->transitionMode == TRANS_MODE_OFF) && (play->transitionTrigger == TRANS_TRIGGER_OFF)) {
+            // Nenhuma transição em andamento: a troca de cena por porta (se houve) já terminou
+            gSeamlessDoorExit = false;
         }
 
         // #region SOH [Stats] Gameplay stats: Count button presses
@@ -844,6 +856,15 @@ void Play_Update(PlayState* play) {
                         gSaveContext.transFadeDuration = 150;
                     } else if (play->transitionCtx.transitionType == TRANS_TYPE_FADE_WHITE_INSTANT) {
                         gSaveContext.transFadeDuration = 2;
+                    }
+
+                    // Seamless Doors: encurta o fade preto (saída e entrada) quando a troca de cena veio de uma
+                    // porta. Fades lentos (título, finais) e outras saídas continuam como no jogo original.
+                    if (gSeamlessDoorExit &&
+                        ((play->transitionCtx.transitionType == TRANS_TYPE_FADE_BLACK) ||
+                         (play->transitionCtx.transitionType == TRANS_TYPE_FADE_BLACK_FAST))) {
+                        gSaveContext.transFadeDuration =
+                            CLAMP(CVarGetInteger(CVAR_ENHANCEMENT("SeamlessDoorsFadeFrames"), 6), 2, 60);
                     }
 
                     if ((play->transitionCtx.transitionType == TRANS_TYPE_FADE_WHITE) ||
