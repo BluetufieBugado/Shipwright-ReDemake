@@ -8,6 +8,21 @@
 #include "soh/SohGui/UIWidgets.hpp"
 #include "soh/Enhancements/MicOcarina/MicOcarina.h"
 
+#include <cstdint>
+#include <memory>
+
+#ifndef __WIIU__
+#include <ship/Context.h>
+#include <ship/controller/controldeck/ControlDeck.h>
+#include <ship/controller/controldevice/controller/mapping/sdl/SDLButtonToButtonMapping.h>
+#include <ship/controller/controldevice/controller/mapping/sdl/SDLAxisDirectionToButtonMapping.h>
+#endif
+
+// BTN_A, BTN_CUP etc. (mesmo include usado pelo SohInputEditorWindow.cpp)
+extern "C" {
+#include "z64.h"
+}
+
 namespace SohGui {
 extern std::shared_ptr<SohMenu> mSohMenu;
 
@@ -228,6 +243,137 @@ void DrawControlsGuide() {
     ImGui::EndGroup();
 }
 
+// ---------------------------------------------------------------- Controller layout preset
+// Liga os botões do gamepad (SDL, nomes do Xbox 360 / ViGEm) aos botões do N64 no layout "portadores" do remake.
+// Os vínculos são por porta (não por dispositivo), então não precisa de controle conectado para aplicar.
+#ifndef __WIIU__
+constexpr uint8_t kPresetPort = 0;   // porta 1 (aba "Link" do editor de controles)
+constexpr int32_t kAxisPositive = 1; // mesmo valor usado nos defaults (SDLAxisDirectionToButtonMapping)
+static_assert(kPresetPort == 0, "A chave HasConfig abaixo assume a porta 1.");
+
+struct PresetButtonBinding {
+    CONTROLLERBUTTONS_T bitmask;
+    SDL_GameControllerButton button;
+};
+
+struct PresetAxisBinding {
+    CONTROLLERBUTTONS_T bitmask;
+    SDL_GameControllerAxis axis;
+};
+
+// Edite aqui para trocar o layout.
+const PresetButtonBinding kPresetButtons[] = {
+    { BTN_CLEFT, SDL_CONTROLLER_BUTTON_LEFTSHOULDER },  // L  -> carrossel / item anterior
+    { BTN_CRIGHT, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER }, // R  -> carrossel / próximo item
+    { BTN_B, SDL_CONTROLLER_BUTTON_Y },                 // Y  -> ataque
+    { BTN_CDOWN, SDL_CONTROLLER_BUTTON_X },             // X  -> pulo (ainda sem função)
+    { BTN_A, SDL_CONTROLLER_BUTTON_A },                 // A  -> ações
+    { BTN_L, SDL_CONTROLLER_BUTTON_B },                 // B  -> guardar
+    { BTN_R, SDL_CONTROLLER_BUTTON_BACK },              // -  -> mapa (ainda sem função)
+    { BTN_START, SDL_CONTROLLER_BUTTON_START },         // +  -> menu
+};
+
+const PresetAxisBinding kPresetAxes[] = {
+    { BTN_Z, SDL_CONTROLLER_AXIS_TRIGGERLEFT },     // ZL -> mira / escudo
+    { BTN_CUP, SDL_CONTROLLER_AXIS_TRIGGERRIGHT },  // ZR -> usa o item em foco
+};
+
+void BindPresetMapping(const std::shared_ptr<Ship::ControllerButton>& button,
+                       const std::shared_ptr<Ship::ControllerButtonMapping>& mapping) {
+    button->AddButtonMapping(mapping);
+    mapping->SaveToConfig();
+    button->SaveButtonMappingIdsToConfig();
+}
+
+bool ApplyRemakeControllerLayout() {
+    auto controller = Ship::Context::GetRawInstance()->GetControlDeck()->GetControllerByPort(kPresetPort);
+    if (controller == nullptr) {
+        return false;
+    }
+
+#ifdef CVAR_PREFIX_CONTROLLERS
+    // Igual ao editor de controles: marca a porta como configurada pelo jogador (os saves abaixo gravam em disco).
+    CVarSetInteger(CVAR_PREFIX_CONTROLLERS ".Port1.HasConfig", 1);
+#endif
+
+    for (const PresetButtonBinding& b : kPresetButtons) {
+        auto button = controller->GetButton(b.bitmask);
+        if (button == nullptr) {
+            continue;
+        }
+        button->ClearAllButtonMappingsForDeviceType(Ship::PhysicalDeviceType::SDLGamepad);
+        BindPresetMapping(button, std::make_shared<Ship::SDLButtonToButtonMapping>(
+                                      kPresetPort, b.bitmask, static_cast<int32_t>(b.button)));
+    }
+
+    for (const PresetAxisBinding& a : kPresetAxes) {
+        auto button = controller->GetButton(a.bitmask);
+        if (button == nullptr) {
+            continue;
+        }
+        button->ClearAllButtonMappingsForDeviceType(Ship::PhysicalDeviceType::SDLGamepad);
+        BindPresetMapping(button, std::make_shared<Ship::SDLAxisDirectionToButtonMapping>(
+                                      kPresetPort, a.bitmask, static_cast<int32_t>(a.axis), kAxisPositive));
+    }
+    return true;
+}
+
+void DrawRemakeLayoutPreset() {
+    static double sAppliedMessageUntil = 0.0;
+    static bool sApplyFailed = false;
+    const char* popupId = "Apply Remake Layout##RemakeLayoutConfirm";
+
+    ImGui::TextWrapped("Sets the gamepad bindings of port 1 to the layout used by Modern Item Switching "
+                       "(Xbox button names).");
+
+    PushStyleButton(THEME_COLOR);
+    if (ImGui::Button("Apply Remake Layout")) {
+        ImGui::OpenPopup(popupId);
+    }
+    PopStyleButton();
+
+    if (ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("This replaces the gamepad (SDL) bindings of A, B, L, R, Z, Start and the four\n"
+                    "C buttons on port 1. The D-Pad, the sticks and keyboard bindings are not changed.");
+        ImGui::Spacing();
+        ImGui::BulletText("LT (ZL) -> Z");
+        ImGui::BulletText("RT (ZR) -> C-Up");
+        ImGui::BulletText("LB (L) -> C-Left");
+        ImGui::BulletText("RB (R) -> C-Right");
+        ImGui::BulletText("Y -> B");
+        ImGui::BulletText("X -> C-Down");
+        ImGui::BulletText("A -> A");
+        ImGui::BulletText("B -> L");
+        ImGui::BulletText("Back (-) -> R");
+        ImGui::BulletText("Start (+) -> Start");
+        ImGui::Spacing();
+        ImGui::Text("To undo it, use Set Defaults in the controller editor.");
+        ImGui::Spacing();
+
+        PushStyleButton(THEME_COLOR);
+        if (ImGui::Button("Apply")) {
+            sApplyFailed = !ApplyRemakeControllerLayout();
+            sAppliedMessageUntil = ImGui::GetTime() + 4.0;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            ImGui::CloseCurrentPopup();
+        }
+        PopStyleButton();
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::GetTime() < sAppliedMessageUntil) {
+        ImGui::TextWrapped(sApplyFailed ? "Could not find the controller on port 1." : "Remake layout applied.");
+    }
+}
+#else
+void DrawRemakeLayoutPreset() {
+    ImGui::TextWrapped("The controller layout preset is not available on this platform.");
+}
+#endif
+
 } // namespace
 
 void SohMenu::AddMenuReDemake() {
@@ -324,6 +470,14 @@ void SohMenu::AddMenuReDemake() {
             "are no longer drawn on the HUD. Turn this off to get the original C button behavior back. "
             "Requires the controller bindings described in the project notes (ZR on C-Up, L on C-Left, "
             "R on C-Right)."));
+
+    AddWidget(controlsPath, "Controller Layout", WIDGET_SEPARATOR_TEXT)
+        .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); });
+
+    AddWidget(controlsPath, "RemakeLayoutPreset", WIDGET_CUSTOM)
+        .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); })
+        .CustomFunction([](WidgetInfo& info) { DrawRemakeLayoutPreset(); })
+        .HideInSearch(true);
 
     AddWidget(controlsPath, "Controls Guide", WIDGET_SEPARATOR_TEXT)
         .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); });
