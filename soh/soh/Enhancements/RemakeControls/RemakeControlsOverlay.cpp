@@ -169,10 +169,9 @@ void DrawCornerItem() {
     if (gPlayState->pauseCtx.state != 0 || gPlayState->pauseCtx.debugState != 0) {
         return;
     }
+    // Sem item em foco o quadrado continua aparecendo, vazio (só moldura e etiquetas), como no remake
     const int item = gSaveContext.equips.buttonItems[1];
-    if (item >= 0xF0) {
-        return; // nenhum item em foco
-    }
+    const bool hasItem = item < 0xF0;
     const float alpha = (float)gPlayState->interfaceCtx.cLeftAlpha / 255.0f;
     if (alpha <= 0.01f) {
         return;
@@ -194,7 +193,7 @@ void DrawCornerItem() {
     dl->AddRect(mn, mx, IM_COL32(200, 200, 200, (int)(180.0f * alpha)), round, 0, fmaxf(1.0f, size * 0.02f));
 
     // Ícone do item (grande, quase do tamanho do quadrado)
-    ImTextureID tex = GetItemTexture(item);
+    ImTextureID tex = hasItem ? GetItemTexture(item) : nullptr;
     if (tex) {
         const float is = size * 0.92f;
         dl->AddImage(tex, ImVec2(c.x - is * 0.5f, c.y - is * 0.5f), ImVec2(c.x + is * 0.5f, c.y + is * 0.5f),
@@ -204,7 +203,7 @@ void DrawCornerItem() {
     // Quantidade no canto inferior direito (número grande)
     int ammo = 0;
     bool full = false;
-    if (GetAmmoInfo(item, &ammo, &full)) {
+    if (hasItem && GetAmmoInfo(item, &ammo, &full)) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", ammo);
         const float fs = size * 0.40f;
@@ -278,8 +277,26 @@ void RemakeControlsOverlay_Draw() {
             break;
         }
     }
-    if (count == 0 || sel < 0) {
+    if (count == 0) {
+        // Nenhum item utilizável: mostra um slot vazio no centro em vez de só escurecer a tela
+        const float ecx = vp->Pos.x + W * 0.5f;
+        const float ecy = vp->Pos.y + H * 0.47f;
+        const float esize = H * 0.134f * 1.12f;
+        const float ehalf = esize * 0.5f;
+        const ImVec2 emn(ecx - ehalf, ecy - ehalf);
+        const ImVec2 emx(ecx + ehalf, ecy + ehalf);
+        const float eround = esize * 0.05f;
+        const float einset = esize * 0.04f;
+        const int ea = (int)(255.0f * sFade);
+        dl->AddRectFilled(emn, emx, IM_COL32(46, 36, 24, (int)(235.0f * sFade)), eround);
+        dl->AddRect(emn, emx, IM_COL32(18, 13, 8, ea), eround, 0, 2.0f);
+        dl->AddRect(ImVec2(emn.x + einset, emn.y + einset), ImVec2(emx.x - einset, emx.y - einset),
+                    IM_COL32(96, 78, 50, (int)(170.0f * sFade)), eround, 0, 1.0f);
+        dl->AddRect(emn, emx, IM_COL32(255, 255, 255, ea), eround, 0, 3.0f);
         return;
+    }
+    if (sel < 0) {
+        sel = 0; // só por um instante, até o foco automático valer
     }
 
     // Trocou a ordenação: a faixa pula direto para a nova posição do item, sem deslizar

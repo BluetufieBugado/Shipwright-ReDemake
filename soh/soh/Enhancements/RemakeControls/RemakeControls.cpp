@@ -172,11 +172,18 @@ static bool CycleFocusedItem(PlayState* play, int dir) {
     return true;
 }
 
-// Se o item em foco deixou de servir (mudou de idade, save antigo), passa para o próximo válido.
+// Garante que o item em foco é válido:
+//  - nada em foco: foca o primeiro item da lista sozinho (se não houver nenhum item, continua vazio);
+//  - item em foco que deixou de servir (mudou de idade, save antigo): passa para o próximo válido.
 static void ValidateFocusedItem(PlayState* play) {
     const int slot = gSaveContext.equips.cButtonSlots[0];
-    if (slot >= ARRAY_COUNT(gSaveContext.inventory.items) || IsSlotUsableForCurrentAge(slot)) {
-        return; // nada em foco, ou o item em foco é válido
+    if (slot >= (int)ARRAY_COUNT(gSaveContext.inventory.items)) {
+        // Foco automático. Sem item nenhum, CycleFocusedItem retorna false sem mexer em nada.
+        CycleFocusedItem(play, 1);
+        return;
+    }
+    if (IsSlotUsableForCurrentAge(slot)) {
+        return; // o item em foco é válido
     }
     if (!CycleFocusedItem(play, 1)) {
         // Nenhum item válido: esvazia o foco (sem carregar ícone, o HUD esconde o slot)
@@ -225,6 +232,7 @@ extern "C" s32 RemakeControls_UpdateCarousel(PlayState* play, s32 isPaused) {
         }
         sCarouselOpen = true;
         justOpened = true;
+        ValidateFocusedItem(play); // garante um item em foco já na primeira abertura
     }
 
     if (!held) {
