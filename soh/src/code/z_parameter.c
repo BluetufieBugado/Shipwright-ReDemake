@@ -87,6 +87,8 @@ extern s32 gRemakeCarouselFrozen;
 // Remake controls (SoH): definidas em RemakeControls.cpp
 int RemakeControls_HideOriginalCButtons(void);
 void RemakeControls_SetCornerHidden(int hidden);
+int RemakeControls_IsEnabled(void);
+int RemakeControls_DpadEquipsActive(void);
 
 #define DO_ACTION_TEX_WIDTH() 48
 #define DO_ACTION_TEX_HEIGHT() 16
@@ -3393,7 +3395,7 @@ void Interface_UpdateMagicBar(PlayState* play) {
                 (play->gameOverCtx.state == GAMEOVER_INACTIVE) && (play->transitionTrigger == TRANS_TRIGGER_OFF) &&
                 (play->transitionMode == TRANS_MODE_OFF) && !Play_InCsMode(play)) {
                 bool hasLens = false;
-                for (int buttonIndex = 1; buttonIndex < ((CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0)
+                for (int buttonIndex = 1; buttonIndex < ((RemakeControls_DpadEquipsActive() != 0)
                                                              ? ARRAY_COUNT(gSaveContext.equips.buttonItems)
                                                              : 4);
                      buttonIndex++) {
@@ -5637,7 +5639,7 @@ void Interface_Draw(PlayState* play) {
             Interface_DrawAmmoCount(play, 3, interfaceCtx->cRightAlpha);
         }
 
-        if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
+        if (RemakeControls_DpadEquipsActive() != 0) {
             // DPad is only greyed-out when all 4 DPad directions are too
             uint16_t dpadAlpha =
                 MAX(MAX(MAX(interfaceCtx->dpadUpAlpha, interfaceCtx->dpadDownAlpha), interfaceCtx->dpadLeftAlpha),
@@ -5692,8 +5694,8 @@ void Interface_Draw(PlayState* play) {
                                         (DpadPosY + 32) << 2, G_TX_RENDERTILE, 0, 0, (1 << 10), (1 << 10));
             }
 
-            // DPad-Up Button Icon & Ammo Count
-            if (gSaveContext.equips.buttonItems[4] < 0xF0) {
+            // DPad-Up Button Icon & Ammo Count (no modo moderno o D-Pad cima é da Navi, sem item)
+            if (gSaveContext.equips.buttonItems[4] < 0xF0 && !RemakeControls_IsEnabled()) {
                 gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, interfaceCtx->dpadUpAlpha);
                 gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
                 Interface_DrawItemIconTexture(play, gItemIcons[gSaveContext.equips.buttonItems[4]], 4);

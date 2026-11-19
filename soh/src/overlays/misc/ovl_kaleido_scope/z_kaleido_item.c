@@ -10,6 +10,10 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 
+// Definidas em RemakeControls.cpp (ligação C)
+int RemakeControls_IsEnabled(void);
+int RemakeControls_DpadEquipsActive(void);
+
 u8 gAmmoItems[] = {
     ITEM_STICK,   ITEM_NUT,  ITEM_BOMB, ITEM_BOW,  ITEM_NONE, ITEM_NONE, ITEM_SLINGSHOT, ITEM_NONE,
     ITEM_BOMBCHU, ITEM_NONE, ITEM_NONE, ITEM_NONE, ITEM_NONE, ITEM_NONE, ITEM_BEAN,      ITEM_NONE,
@@ -868,10 +872,14 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                 if ((pauseCtx->debugState == 0) && (pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0)) {
                     KaleidoScope_HandleItemCycles(play);
                     u16 buttonsToCheck = BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT;
-                    if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) &&
+                    if (RemakeControls_DpadEquipsActive() &&
                         (!CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) ||
                          CHECK_BTN_ALL(input->cur.button, BTN_CUP))) {
-                        buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+                        buttonsToCheck |= BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+                        // D-Pad cima fica reservado para a Navi no modo moderno
+                        if (!RemakeControls_IsEnabled()) {
+                            buttonsToCheck |= BTN_DUP;
+                        }
                     }
                     if (CHECK_BTN_ANY(input->press.button, buttonsToCheck)) {
                         if (CHECK_AGE_REQ_SLOT(cursorSlot) && (cursorItem != ITEM_SOLD_OUT) &&
@@ -992,8 +1000,8 @@ void KaleidoScope_SetupItemEquip(PlayState* play, u16 item, u16 slot, s16 animX,
         pauseCtx->equipTargetCBtn = 1;
     } else if (CHECK_BTN_ALL(input->press.button, BTN_CRIGHT)) {
         pauseCtx->equipTargetCBtn = 2;
-    } else if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0)) {
-        if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+    } else if (RemakeControls_DpadEquipsActive()) {
+        if (!RemakeControls_IsEnabled() && CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
             pauseCtx->equipTargetCBtn = 3;
         } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN)) {
             pauseCtx->equipTargetCBtn = 4;

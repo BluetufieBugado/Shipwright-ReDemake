@@ -4,6 +4,8 @@
 extern "C" {
 // O sistema de controles do remake está ligado (CVar)?
 int RemakeControls_IsEnabled(void);
+// O D-Pad deve equipar itens? (modo moderno ligado OU a opção "D-Pad equipa itens" ligada)
+int RemakeControls_DpadEquipsActive(void);
 // 1 = o HUD original não deve desenhar os botões C (o item em foco vai para o canto da tela)
 int RemakeControls_HideOriginalCButtons(void);
 // Chamada por Interface_Draw a cada frame: o HUD está escondendo os botões C neste momento (aba Quest/Mapa)?

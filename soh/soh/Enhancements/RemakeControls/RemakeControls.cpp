@@ -31,6 +31,11 @@ extern "C" int RemakeControls_IsEnabled(void) {
     return CVAR_REMAKE_CONTROLS_VALUE;
 }
 
+// O D-Pad equipa itens? Vale se a opção antiga "D-Pad equipa itens" estiver ligada OU o modo moderno estiver ligado.
+extern "C" int RemakeControls_DpadEquipsActive(void) {
+    return CVAR_REMAKE_CONTROLS_VALUE || CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0);
+}
+
 // Com o sistema ligado, os ícones C-esquerdo/C-baixo/C-direito originais deixam de ser desenhados.
 extern "C" int RemakeControls_HideOriginalCButtons(void) {
     return CVAR_REMAKE_CONTROLS_VALUE;
@@ -278,9 +283,21 @@ extern "C" void RemakeControls_ModifyPlayerInput(Input* input) {
     const bool useHeld = CHECK_BTN_ANY(input->cur.button, BTN_CUP);
     const bool usePress = CHECK_BTN_ANY(input->press.button, BTN_CUP);
 
+    // D-Pad cima chama a Navi: o jogo original usa C-cima para isso, então ele vira um C-cima comum.
+    const bool naviHeld = CHECK_BTN_ANY(input->cur.button, BTN_DUP);
+    const bool naviPress = CHECK_BTN_ANY(input->press.button, BTN_DUP);
+
     // Consome os portadores: o jogo não pode reagir a eles como botões C de verdade.
-    input->cur.button &= ~kRemakeCarrierButtons;
-    input->press.button &= ~kRemakeCarrierButtons;
+    // O D-Pad cima também sai, para nunca ser tratado como slot de item.
+    input->cur.button &= ~(kRemakeCarrierButtons | BTN_DUP);
+    input->press.button &= ~(kRemakeCarrierButtons | BTN_DUP);
+
+    if (naviHeld) {
+        input->cur.button |= BTN_CUP;
+    }
+    if (naviPress) {
+        input->press.button |= BTN_CUP;
+    }
 
     ValidateFocusedItem(gPlayState);
 

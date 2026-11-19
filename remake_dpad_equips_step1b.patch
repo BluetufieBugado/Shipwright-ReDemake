@@ -1,0 +1,154 @@
+diff --git a/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp b/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp
+index 18645a7..68f7aa6 100644
+--- a/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp
++++ b/soh/soh/Enhancements/RemakeControls/RemakeControls.cpp
+@@ -283,9 +283,21 @@ extern "C" void RemakeControls_ModifyPlayerInput(Input* input) {
+     const bool useHeld = CHECK_BTN_ANY(input->cur.button, BTN_CUP);
+     const bool usePress = CHECK_BTN_ANY(input->press.button, BTN_CUP);
+ 
++    // D-Pad cima chama a Navi: o jogo original usa C-cima para isso, então ele vira um C-cima comum.
++    const bool naviHeld = CHECK_BTN_ANY(input->cur.button, BTN_DUP);
++    const bool naviPress = CHECK_BTN_ANY(input->press.button, BTN_DUP);
++
+     // Consome os portadores: o jogo não pode reagir a eles como botões C de verdade.
+-    input->cur.button &= ~kRemakeCarrierButtons;
+-    input->press.button &= ~kRemakeCarrierButtons;
++    // O D-Pad cima também sai, para nunca ser tratado como slot de item.
++    input->cur.button &= ~(kRemakeCarrierButtons | BTN_DUP);
++    input->press.button &= ~(kRemakeCarrierButtons | BTN_DUP);
++
++    if (naviHeld) {
++        input->cur.button |= BTN_CUP;
++    }
++    if (naviPress) {
++        input->press.button |= BTN_CUP;
++    }
+ 
+     ValidateFocusedItem(gPlayState);
+ 
+diff --git a/soh/src/code/z_parameter.c b/soh/src/code/z_parameter.c
+index 0b9867d..a6ccc0a 100644
+--- a/soh/src/code/z_parameter.c
++++ b/soh/src/code/z_parameter.c
+@@ -87,6 +87,8 @@ extern s32 gRemakeCarouselFrozen;
+ // Remake controls (SoH): definidas em RemakeControls.cpp
+ int RemakeControls_HideOriginalCButtons(void);
+ void RemakeControls_SetCornerHidden(int hidden);
++int RemakeControls_IsEnabled(void);
++int RemakeControls_DpadEquipsActive(void);
+ 
+ #define DO_ACTION_TEX_WIDTH() 48
+ #define DO_ACTION_TEX_HEIGHT() 16
+@@ -3393,7 +3395,7 @@ void Interface_UpdateMagicBar(PlayState* play) {
+                 (play->gameOverCtx.state == GAMEOVER_INACTIVE) && (play->transitionTrigger == TRANS_TRIGGER_OFF) &&
+                 (play->transitionMode == TRANS_MODE_OFF) && !Play_InCsMode(play)) {
+                 bool hasLens = false;
+-                for (int buttonIndex = 1; buttonIndex < ((CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0)
++                for (int buttonIndex = 1; buttonIndex < ((RemakeControls_DpadEquipsActive() != 0)
+                                                              ? ARRAY_COUNT(gSaveContext.equips.buttonItems)
+                                                              : 4);
+                      buttonIndex++) {
+@@ -5637,7 +5639,7 @@ void Interface_Draw(PlayState* play) {
+             Interface_DrawAmmoCount(play, 3, interfaceCtx->cRightAlpha);
+         }
+ 
+-        if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++        if (RemakeControls_DpadEquipsActive() != 0) {
+             // DPad is only greyed-out when all 4 DPad directions are too
+             uint16_t dpadAlpha =
+                 MAX(MAX(MAX(interfaceCtx->dpadUpAlpha, interfaceCtx->dpadDownAlpha), interfaceCtx->dpadLeftAlpha),
+@@ -5692,8 +5694,8 @@ void Interface_Draw(PlayState* play) {
+                                         (DpadPosY + 32) << 2, G_TX_RENDERTILE, 0, 0, (1 << 10), (1 << 10));
+             }
+ 
+-            // DPad-Up Button Icon & Ammo Count
+-            if (gSaveContext.equips.buttonItems[4] < 0xF0) {
++            // DPad-Up Button Icon & Ammo Count (no modo moderno o D-Pad cima é da Navi, sem item)
++            if (gSaveContext.equips.buttonItems[4] < 0xF0 && !RemakeControls_IsEnabled()) {
+                 gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, interfaceCtx->dpadUpAlpha);
+                 gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
+                 Interface_DrawItemIconTexture(play, gItemIcons[gSaveContext.equips.buttonItems[4]], 4);
+diff --git a/soh/src/overlays/actors/ovl_player_actor/z_player.c b/soh/src/overlays/actors/ovl_player_actor/z_player.c
+index 5e382df..36e3fa0 100644
+--- a/soh/src/overlays/actors/ovl_player_actor/z_player.c
++++ b/soh/src/overlays/actors/ovl_player_actor/z_player.c
+@@ -398,6 +398,7 @@ static Input* sControlInput;
+ 
+ // Remake controls (SoH): implemented in RemakeControls.cpp
+ void RemakeControls_ModifyPlayerInput(Input* input);
++int RemakeControls_DpadEquipsActive(void);
+ 
+ // .data
+ 
+@@ -2472,7 +2473,7 @@ s32 Player_ItemIsItemAction(s32 item1, s32 itemAction) {
+ }
+ 
+ s32 Player_GetItemOnButton(PlayState* play, s32 index) {
+-    if (index >= ((CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) ? 8 : 4)) {
++    if (index >= ((RemakeControls_DpadEquipsActive() != 0) ? 8 : 4)) {
+         return ITEM_NONE;
+     } else if (play->bombchuBowlingStatus != 0) {
+         return (play->bombchuBowlingStatus > 0) ? ITEM_BOMBCHU : ITEM_NONE;
+@@ -2513,7 +2514,7 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
+         maskItemAction = this->currentMask - 1 + PLAYER_IA_MASK_KEATON;
+ 
+         bool hasOnDpad = false;
+-        if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++        if (RemakeControls_DpadEquipsActive() != 0) {
+             for (int buttonIndex = 0; buttonIndex < 4; buttonIndex++) {
+                 hasOnDpad |= Player_ItemIsItemAction(DPAD_ITEM(buttonIndex), maskItemAction);
+             }
+@@ -2528,7 +2529,7 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
+     if (!(this->stateFlags1 & (PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_IN_CUTSCENE)) && !func_8008F128(this)) {
+         if (this->itemAction >= PLAYER_IA_FISHING_POLE) {
+             bool hasOnDpad = false;
+-            if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++            if (RemakeControls_DpadEquipsActive() != 0) {
+                 for (int buttonIndex = 0; buttonIndex < 4; buttonIndex++) {
+                     hasOnDpad |= Player_ItemIsInUse(this, DPAD_ITEM(buttonIndex));
+                 }
+@@ -2931,7 +2932,7 @@ int func_80834E44(PlayState* play) {
+ 
+ int func_80834E7C(PlayState* play) {
+     u16 buttonsToCheck = BTN_A | BTN_B | BTN_CUP | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+-    if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++    if (RemakeControls_DpadEquipsActive() != 0) {
+         buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+     }
+     return (play->shootingGalleryStatus != 0) &&
+@@ -7784,7 +7785,7 @@ s32 Player_CanThrowCarriedActor(Player* this, Actor* actor) {
+ 
+ s32 Player_ActionHandler_9(Player* this, PlayState* play) {
+     u16 buttonsToCheck = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+-    if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++    if (RemakeControls_DpadEquipsActive() != 0) {
+         buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+     }
+     if (GameInteractor_Should(VB_THROW_OR_PUT_DOWN_HELD_ITEM,
+@@ -9956,7 +9957,7 @@ void Player_Action_8084411C(Player* this, PlayState* play) {
+             Actor* heldActor = this->heldActor;
+ 
+             u16 buttonsToCheck = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+-            if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++            if (RemakeControls_DpadEquipsActive() != 0) {
+                 buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+             }
+             if (!func_80835644(play, this, heldActor) && (heldActor->id == ACTOR_EN_NIW) &&
+@@ -10778,7 +10779,7 @@ void Player_Action_80846260(Player* this, PlayState* play) {
+     }
+ 
+     u16 buttonsToCheck = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+-    if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++    if (RemakeControls_DpadEquipsActive() != 0) {
+         buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+     }
+     if (this->av2.actionVar2 == 0) {
+@@ -13198,7 +13199,7 @@ void Player_Action_8084B1D8(Player* this, PlayState* play) {
+     }
+ 
+     u16 buttonsToCheck = BTN_A | BTN_B | BTN_R | BTN_CUP | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+-    if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
++    if (RemakeControls_DpadEquipsActive() != 0) {
+         buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+     }
+     if ((this->csAction != 0) || (this->unk_6AD == 0) || (this->unk_6AD >= 4) || Player_UpdateHostileLockOn(this) ||

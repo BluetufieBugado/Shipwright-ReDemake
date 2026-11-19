@@ -7,6 +7,10 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 
+// Definidas em RemakeControls.cpp (ligação C)
+int RemakeControls_IsEnabled(void);
+int RemakeControls_DpadEquipsActive(void);
+
 static u8 sChildUpgrades[] = { UPG_BULLET_BAG, UPG_BOMB_BAG, UPG_STRENGTH, UPG_SCALE };
 static u8 sAdultUpgrades[] = { UPG_QUIVER, UPG_BOMB_BAG, UPG_STRENGTH, UPG_SCALE };
 
@@ -1212,9 +1216,13 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
         }
 
         u16 buttonsToCheck = BTN_A | BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT;
-        if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) &&
+        if (RemakeControls_DpadEquipsActive() &&
             (!CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) || CHECK_BTN_ALL(input->cur.button, BTN_CUP))) {
-            buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+            buttonsToCheck |= BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+            // D-Pad cima fica reservado para a Navi no modo moderno
+            if (!RemakeControls_IsEnabled()) {
+                buttonsToCheck |= BTN_DUP;
+            }
         }
 
         if ((pauseCtx->cursorSpecialPos == 0) && (cursorItem != PAUSE_ITEM_NONE) && (pauseCtx->state == 6) &&
