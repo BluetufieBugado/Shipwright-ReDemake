@@ -326,11 +326,9 @@ void DrawRemakeLayoutPreset() {
     ImGui::TextWrapped("Sets the gamepad bindings of port 1 to the layout used by Modern Item Switching "
                        "(Xbox button names).");
 
-    PushStyleButton(THEME_COLOR);
     if (ImGui::Button("Apply Remake Layout")) {
         ImGui::OpenPopup(popupId);
     }
-    PopStyleButton();
 
     if (ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("This replaces the gamepad (SDL) bindings of A, B, L, R, Z, Start and the four\n"
@@ -350,7 +348,6 @@ void DrawRemakeLayoutPreset() {
         ImGui::Text("To undo it, use Set Defaults in the controller editor.");
         ImGui::Spacing();
 
-        PushStyleButton(THEME_COLOR);
         if (ImGui::Button("Apply")) {
             sApplyFailed = !ApplyRemakeControllerLayout();
             sAppliedMessageUntil = ImGui::GetTime() + 4.0;
@@ -360,7 +357,6 @@ void DrawRemakeLayoutPreset() {
         if (ImGui::Button("Cancel")) {
             ImGui::CloseCurrentPopup();
         }
-        PopStyleButton();
         ImGui::EndPopup();
     }
 
