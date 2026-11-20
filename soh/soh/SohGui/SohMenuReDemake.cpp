@@ -8,6 +8,8 @@
 #include "soh/SohGui/UIWidgets.hpp"
 #include "soh/Enhancements/MicOcarina/MicOcarina.h"
 
+#include <cfloat>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -61,13 +63,13 @@ struct GuideEntry {
 const GuideEntry kGuideEntries[] = {
     { "Z", "Aim at a target and raise the shield.", true, false },
     { "L", "Put the sword away.", false, false },
-    { "R", "Open the map. (coming soon)", true, true },
+    { "R", "Raise the shield (original behavior, same as ZL).", false, false },
     { "C-Up", "Use the focused item (shown in the top-right corner).", true, false },
     { "C-Left / C-Right",
       "Hold to open the item carousel (the game pauses). Press again to pick the previous / next item, release to "
       "close.",
       true, false },
-    { "C-Down", "Jump. (coming soon)", true, true },
+    { "C-Down", "Jump. Not available while the shield is raised.", true, false },
     { "D-Pad Up", "Call Navi.", true, false },
     { "D-Pad Left / Right / Down", "Free item slots. Choose the items in the pause menu.", true, false },
     { "B", "Attack. With the carousel open, switches between Default and By Type ordering.", true, false },
@@ -201,6 +203,31 @@ void DrawControllerDiagram(ImDrawList* dl, ImVec2 origin, float s) {
     Arrow(318.0f, 122.0f, 6.0f, Down, kArrowDark);
 }
 
+// Tabela "botão -> o que faz", usada pelos guias do controle e do teclado.
+template <std::size_t N>
+void DrawGuideTable(const char* id, const GuideEntry (&entries)[N], const ImVec4& accent) {
+    if (ImGui::BeginTable(id, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 9.0f);
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
+        for (const GuideEntry& e : entries) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::PushStyleColor(ImGuiCol_Text, e.changed ? accent : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+            ImGui::TextWrapped("%s", e.button);
+            ImGui::PopStyleColor();
+            ImGui::TableNextColumn();
+            if (e.planned) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            }
+            ImGui::TextWrapped("%s", e.text);
+            if (e.planned) {
+                ImGui::PopStyleColor();
+            }
+        }
+        ImGui::EndTable();
+    }
+}
+
 void DrawControlsGuide() {
     const ImVec4 accent = ImGui::ColorConvertU32ToFloat4(IM_COL32(0, 190, 255, 255));
     const float s = (ImGui::GetFontSize() / 16.0f) * 0.85f;
@@ -223,27 +250,183 @@ void DrawControlsGuide() {
     ImGui::PopStyleColor();
     ImGui::Spacing();
 
-    if (ImGui::BeginTable("##RemakeControlsGuide", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 9.0f);
-        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
-        for (const GuideEntry& e : kGuideEntries) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::PushStyleColor(ImGuiCol_Text, e.changed ? accent : ImGui::GetStyleColorVec4(ImGuiCol_Text));
-            ImGui::TextWrapped("%s", e.button);
-            ImGui::PopStyleColor();
-            ImGui::TableNextColumn();
-            if (e.planned) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            }
-            ImGui::TextWrapped("%s", e.text);
-            if (e.planned) {
-                ImGui::PopStyleColor();
-            }
-        }
-        ImGui::EndTable();
-    }
+    DrawGuideTable("##RemakeControlsGuide", kGuideEntries, accent);
     ImGui::EndGroup();
+}
+
+// ---------------------------------------------------------------- Keyboard guide
+// Desenho do teclado (bloco das letras) + mouse, com o layout do botão "Apply PC Layout" (kPcKeys / kPcMouse mais
+// abaixo). Se trocar teclas nessas tabelas, atualize também kKeyInfos, o desenho do mouse e kKeyboardGuideEntries.
+// Coordenadas de referência: 600 x 186.
+constexpr float kKbUnit = 38.0f;  // passo entre as teclas
+constexpr float kKbKey = 34.0f;   // tamanho da tecla
+constexpr float kKbMouseX = 520.0f;
+constexpr float kKbRefW = 600.0f;
+constexpr float kKbRefH = 4.0f * kKbUnit + kKbKey;
+
+enum class KeyStyle { Dim, Used, New };
+
+struct KeyInfo {
+    char key;
+    const char* caption;
+    KeyStyle style; // Used = tecla do layout; New = função nova com o modo moderno (anel ciano)
+};
+
+const KeyInfo kKeyInfos[] = {
+    { '1', "Item", KeyStyle::New },  { '2', "Item", KeyStyle::New },   { '3', "Item", KeyStyle::New },
+    { 'Q', "Prev", KeyStyle::New },  { 'E', "Next", KeyStyle::New },   { 'R', "Sheath", KeyStyle::Used },
+    { 'W', "Move", KeyStyle::Used }, { 'A', "Move", KeyStyle::Used },  { 'S', "Move", KeyStyle::Used },
+    { 'D', "Move", KeyStyle::Used }, { 'F', "Use", KeyStyle::New },    { 'C', "Navi", KeyStyle::New },
+    { 'M', "Shield", KeyStyle::Used },
+};
+
+const GuideEntry kKeyboardGuideEntries[] = {
+    { "W A S D", "Move Link.", false, false },
+    { "Mouse", "Move the camera (Free Look).", false, false },
+    { "Left click", "Attack. With the carousel open, switches between Default and By Type ordering.", true, false },
+    { "Right click", "Aim at a target and raise the shield.", true, false },
+    { "F", "Use the focused item (shown in the top-right corner).", true, false },
+    { "Q / E",
+      "Hold to open the item carousel (the game pauses). Press again to pick the previous / next item, release to "
+      "close.",
+      true, false },
+    { "Shift", "Jump. Not available while the shield is raised.", true, false },
+    { "Space", "Context actions (talk, open, roll, ...).", false, false },
+    { "R", "Put the sword away.", false, false },
+    { "M", "Raise the shield (original behavior, same as right click).", false, false },
+    { "1 / 2 / 3", "Free item slots (D-Pad Left / Down / Right). Choose the items in the pause menu.", true, false },
+    { "C", "Call Navi.", true, false },
+    { "Enter", "Pause menu.", false, false },
+    { "F2", "Turn mouse capture on or off.", false, false },
+};
+
+void DrawKeyboardDiagram(ImDrawList* dl, ImVec2 origin, float s) {
+    const ImU32 kAccent = IM_COL32(0, 190, 255, 255);
+    const ImU32 kEdge = IM_COL32(95, 95, 100, 255);
+    const ImU32 kDimFill = IM_COL32(52, 52, 58, 255);
+    const ImU32 kDimText = IM_COL32(125, 125, 132, 255);
+    const ImU32 kUsedFill = IM_COL32(105, 105, 112, 255);
+    const ImU32 kWhite = IM_COL32(255, 255, 255, 255);
+    const ImU32 kSoft = IM_COL32(225, 225, 230, 255);
+
+    auto P = [&](float x, float y) { return ImVec2(origin.x + x * s, origin.y + y * s); };
+
+    // Texto centrado; se não couber em maxW, diminui a fonte.
+    auto Text = [&](ImVec2 center, const char* text, float size, ImU32 col, float maxW) {
+        ImFont* font = ImGui::GetFont();
+        float fontSize = size;
+        ImVec2 ts = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
+        if (ts.x > maxW && ts.x > 0.0f) {
+            fontSize = fontSize * maxW / ts.x;
+            ts = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
+        }
+        dl->AddText(font, fontSize, ImVec2(center.x - ts.x * 0.5f, center.y - ts.y * 0.5f), col, text);
+    };
+
+    auto Key = [&](float kx, float ky, float kw, const char* label, const char* caption, KeyStyle style) {
+        const ImVec2 a = P(kx, ky);
+        const ImVec2 b = P(kx + kw, ky + kKbKey);
+        const bool used = style != KeyStyle::Dim;
+        dl->AddRectFilled(a, b, used ? kUsedFill : kDimFill, 5.0f * s);
+        dl->AddRect(a, b, kEdge, 5.0f * s);
+        const float cx = (a.x + b.x) * 0.5f;
+        const float maxW = (b.x - a.x) - 4.0f * s;
+        if (caption != nullptr) {
+            Text(ImVec2(cx, a.y + kKbKey * 0.33f * s), label, 16.0f * s, kWhite, maxW);
+            Text(ImVec2(cx, a.y + kKbKey * 0.76f * s), caption, 10.0f * s, kSoft, maxW);
+        } else {
+            Text(ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), label, 16.0f * s, used ? kWhite : kDimText, maxW);
+        }
+        if (style == KeyStyle::New) {
+            dl->AddRect(ImVec2(a.x - 2.0f * s, a.y - 2.0f * s), ImVec2(b.x + 2.0f * s, b.y + 2.0f * s), kAccent,
+                        7.0f * s, 0, 2.0f);
+        }
+    };
+
+    // Letras e números (as teclas que não são do layout ficam apagadas).
+    struct Row {
+        const char* keys;
+        float x;
+        float y;
+    };
+    const Row rows[] = {
+        { "1234567890", 1.0f * kKbUnit, 0.0f * kKbUnit },
+        { "QWERTYUIOP", 1.5f * kKbUnit, 1.0f * kKbUnit },
+        { "ASDFGHJKL", 1.75f * kKbUnit, 2.0f * kKbUnit },
+        { "ZXCVBNM", 2.25f * kKbUnit, 3.0f * kKbUnit },
+    };
+    for (const Row& row : rows) {
+        float kx = row.x;
+        for (const char* c = row.keys; *c != '\0'; c++) {
+            const char label[2] = { *c, '\0' };
+            const char* caption = nullptr;
+            KeyStyle style = KeyStyle::Dim;
+            for (const KeyInfo& info : kKeyInfos) {
+                if (info.key == *c) {
+                    caption = info.caption;
+                    style = info.style;
+                    break;
+                }
+            }
+            Key(kx, row.y, kKbKey, label, caption, style);
+            kx += kKbUnit;
+        }
+    }
+
+    // Teclas largas.
+    Key(0.0f, 3.0f * kKbUnit, 2.25f * kKbUnit - (kKbUnit - kKbKey), "Shift", "Jump", KeyStyle::New);
+    Key(10.75f * kKbUnit, 2.0f * kKbUnit, 2.25f * kKbUnit - (kKbUnit - kKbKey), "Enter", "Menu", KeyStyle::Used);
+    Key(3.25f * kKbUnit, 4.0f * kKbUnit, 6.0f * kKbUnit - (kKbUnit - kKbKey), "Space", "Action", KeyStyle::Used);
+
+    // Mouse.
+    const float mx = kKbMouseX;
+    dl->AddRectFilled(P(mx, 0.0f), P(mx + 80.0f, 130.0f), kDimFill, 24.0f * s);
+    dl->AddRect(P(mx, 0.0f), P(mx + 80.0f, 130.0f), kEdge, 24.0f * s);
+
+    const ImVec2 leftA = P(mx + 7.0f, 7.0f);
+    const ImVec2 leftB = P(mx + 38.0f, 62.0f);
+    const ImVec2 rightA = P(mx + 42.0f, 7.0f);
+    const ImVec2 rightB = P(mx + 73.0f, 62.0f);
+    dl->AddRectFilled(leftA, leftB, kUsedFill, 8.0f * s);
+    dl->AddRectFilled(rightA, rightB, kUsedFill, 8.0f * s);
+    dl->AddRectFilled(P(mx + 37.0f, 14.0f), P(mx + 43.0f, 36.0f), kDimText, 3.0f * s);
+    dl->AddRect(ImVec2(leftA.x - 2.0f * s, leftA.y - 2.0f * s), ImVec2(leftB.x + 2.0f * s, leftB.y + 2.0f * s), kAccent,
+                9.0f * s, 0, 2.0f);
+    dl->AddRect(ImVec2(rightA.x - 2.0f * s, rightA.y - 2.0f * s), ImVec2(rightB.x + 2.0f * s, rightB.y + 2.0f * s),
+                kAccent, 9.0f * s, 0, 2.0f);
+    Text(P(mx + 22.5f, 46.0f), "Attack", 10.0f * s, kWhite, 28.0f * s);
+    Text(P(mx + 57.5f, 46.0f), "Aim", 10.0f * s, kWhite, 28.0f * s);
+    Text(P(mx + 22.5f, 28.0f), "L", 16.0f * s, kWhite, 28.0f * s);
+    Text(P(mx + 57.5f, 28.0f), "R", 16.0f * s, kWhite, 28.0f * s);
+    Text(P(mx + 40.0f, 82.0f), "Move the", 10.0f * s, kSoft, 66.0f * s);
+    Text(P(mx + 40.0f, 96.0f), "mouse =", 10.0f * s, kSoft, 66.0f * s);
+    Text(P(mx + 40.0f, 110.0f), "camera", 10.0f * s, kSoft, 66.0f * s);
+}
+
+void DrawKeyboardGuide() {
+    const ImVec4 accent = ImGui::ColorConvertU32ToFloat4(IM_COL32(0, 190, 255, 255));
+    const float avail = ImGui::GetContentRegionAvail().x;
+    float s = ImGui::GetFontSize() / 16.0f;
+    if (avail > 0.0f && kKbRefW * s > avail) {
+        s = avail / kKbRefW;
+    }
+    if (s < 0.5f) {
+        s = 0.5f;
+    }
+    const ImVec2 size(kKbRefW * s, kKbRefH * s);
+
+    ImGui::TextWrapped("Layout of the \"Apply PC Layout\" button. Dark keys are not used.");
+    ImGui::PushStyleColor(ImGuiCol_Text, accent);
+    ImGui::TextWrapped("Keys with a cyan ring have a new function with Modern Item Switching.");
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(size);
+    DrawKeyboardDiagram(ImGui::GetWindowDrawList(), origin, s);
+
+    ImGui::Spacing();
+    DrawGuideTable("##RemakeKeyboardGuide", kKeyboardGuideEntries, accent);
 }
 
 // ---------------------------------------------------------------- Layout presets (gamepad e PC)
@@ -278,10 +461,10 @@ const PresetButtonBinding kPresetButtons[] = {
     { BTN_CLEFT, SDL_CONTROLLER_BUTTON_LEFTSHOULDER },   // L  -> carrossel / item anterior
     { BTN_CRIGHT, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER }, // R  -> carrossel / próximo item
     { BTN_B, SDL_CONTROLLER_BUTTON_Y },                  // Y  -> ataque
-    { BTN_CDOWN, SDL_CONTROLLER_BUTTON_X },              // X  -> pulo (ainda sem função)
+    { BTN_CDOWN, SDL_CONTROLLER_BUTTON_X },              // X  -> pulo
     { BTN_A, SDL_CONTROLLER_BUTTON_A },                  // A  -> ações
     { BTN_L, SDL_CONTROLLER_BUTTON_B },                  // B  -> guardar
-    { BTN_R, SDL_CONTROLLER_BUTTON_BACK },               // -  -> mapa (ainda sem função)
+    { BTN_R, SDL_CONTROLLER_BUTTON_BACK },               // -  -> escudo (função original do R)
     { BTN_START, SDL_CONTROLLER_BUTTON_START },          // +  -> menu
 };
 
@@ -296,9 +479,9 @@ const PresetKeyBinding kPcKeys[] = {
     { BTN_CLEFT, Ship::LUS_KB_Q },      // Q       -> carrossel / item anterior
     { BTN_CRIGHT, Ship::LUS_KB_E },     // E       -> carrossel / próximo item
     { BTN_A, Ship::LUS_KB_SPACE },      // Espaço  -> ações
-    { BTN_CDOWN, Ship::LUS_KB_SHIFT },  // Shift   -> pulo (ainda sem função)
+    { BTN_CDOWN, Ship::LUS_KB_SHIFT },  // Shift   -> pulo
     { BTN_L, Ship::LUS_KB_R },          // R       -> guardar
-    { BTN_R, Ship::LUS_KB_M },          // M       -> mapa (ainda sem função)
+    { BTN_R, Ship::LUS_KB_M },          // M       -> escudo (função original do R)
     { BTN_START, Ship::LUS_KB_ENTER },  // Enter   -> menu
     { BTN_DLEFT, Ship::LUS_KB_1 },      // 1       -> slot D-Pad esquerda
     { BTN_DDOWN, Ship::LUS_KB_2 },      // 2       -> slot D-Pad baixo
@@ -417,6 +600,25 @@ bool ApplyPcControllerLayout() {
     return true;
 }
 
+// Primeira execução: aplica o preset de PC uma única vez, para o jogador não precisar abrir o menu.
+// O ControlDeck já criou os vínculos padrão (e marcou Port1.HasConfig) antes deste ponto, então o HasConfig não
+// serve para detectar a primeira execução: o marcador é o próprio CVar. Ele é definido ANTES de aplicar para ser
+// gravado em disco junto com os vínculos (cada SaveToConfig() salva os CVars). Só PC; o preset do controle é manual.
+void AutoApplyPcPresetOnce() {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("RemakeControlsPcPresetApplied"), 0) != 0) {
+        return;
+    }
+    // Com o modo moderno desligado pelo jogador, o preset não faz sentido: não aplica e não marca.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("RemakeControls"), 1) == 0) {
+        return;
+    }
+    CVarSetInteger(CVAR_ENHANCEMENT("RemakeControlsPcPresetApplied"), 1);
+    if (!ApplyPcControllerLayout()) {
+        // Porta 1 indisponível: tenta de novo na próxima execução.
+        CVarSetInteger(CVAR_ENHANCEMENT("RemakeControlsPcPresetApplied"), 0);
+    }
+}
+
 struct PresetUiState {
     double messageUntil = 0.0;
     bool failed = false;
@@ -471,7 +673,7 @@ void DrawRemakeLayoutPreset() {
                     "  X  ->  C-Down\n"
                     "  A  ->  A\n"
                     "  B  ->  L\n"
-                    "  Back (-)  ->  R\n"
+                    "  Back (-)  ->  R (raise the shield)\n"
                     "  Start (+)  ->  Start\n"
                     "\n"
                     "To undo the bindings, use Set Defaults in the controller editor.",
@@ -491,9 +693,9 @@ void DrawRemakeLayoutPreset() {
                     "  F  ->  C-Up (use the focused item)\n"
                     "  Q / E  ->  C-Left / C-Right (item carousel)\n"
                     "  Space  ->  A\n"
-                    "  Shift  ->  C-Down (jump, coming soon)\n"
+                    "  Shift  ->  C-Down (jump)\n"
                     "  R  ->  L (put the sword away)\n"
-                    "  M  ->  R (map, coming soon)\n"
+                    "  M  ->  R (raise the shield)\n"
                     "  Enter  ->  Start\n"
                     "  1 / 2 / 3  ->  D-Pad Left / Down / Right (free item slots)\n"
                     "  C  ->  D-Pad Up (Navi)\n"
@@ -505,6 +707,9 @@ void DrawRemakeLayoutPreset() {
 #else
 void DrawRemakeLayoutPreset() {
     ImGui::TextWrapped("The layout presets are not available on this platform.");
+}
+
+void AutoApplyPcPresetOnce() {
 }
 #endif
 
@@ -521,6 +726,12 @@ void SohMenu::AddMenuReDemake() {
     if (CVarGetInteger(CVAR_ENHANCEMENT("RemakeControls"), -1) == -1) {
         CVarSetInteger(CVAR_ENHANCEMENT("RemakeControls"), 1);
     }
+    if (CVarGetInteger(CVAR_ENHANCEMENT("RemakeControlsJump"), -1) == -1) {
+        CVarSetInteger(CVAR_ENHANCEMENT("RemakeControlsJump"), 1);
+    }
+
+    // Primeira execução: aplica o preset de PC (teclado + mouse) uma vez só.
+    AutoApplyPcPresetOnce();
 
     AddMenuEntry("ReDemake", CVAR_SETTING("Menu.ReDemakeSidebarSection"));
 
@@ -605,6 +816,13 @@ void SohMenu::AddMenuReDemake() {
             "Requires the controller bindings described in the project notes (ZR on C-Up, L on C-Left, "
             "R on C-Right)."));
 
+    AddWidget(controlsPath, "Jump (C-Down)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("RemakeControlsJump"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); })
+        .Options(CheckboxOptions().Tooltip(
+            "Pressing the button bound to C-Down (X on the gamepad, Shift on the PC layout) makes Link jump, "
+            "like the remake. Not available while the shield is raised, in water, or while carrying something."));
+
     AddWidget(controlsPath, "Layout Presets", WIDGET_SEPARATOR_TEXT)
         .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); });
 
@@ -619,6 +837,14 @@ void SohMenu::AddMenuReDemake() {
     AddWidget(controlsPath, "ControlsGuideDiagram", WIDGET_CUSTOM)
         .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); })
         .CustomFunction([](WidgetInfo& info) { DrawControlsGuide(); })
+        .HideInSearch(true);
+
+    AddWidget(controlsPath, "Keyboard Guide", WIDGET_SEPARATOR_TEXT)
+        .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); });
+
+    AddWidget(controlsPath, "KeyboardGuideDiagram", WIDGET_CUSTOM)
+        .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); })
+        .CustomFunction([](WidgetInfo& info) { DrawKeyboardGuide(); })
         .HideInSearch(true);
 }
 } // namespace SohGui
