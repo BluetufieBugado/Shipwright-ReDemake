@@ -16,6 +16,9 @@
 #include <ship/controller/controldeck/ControlDeck.h>
 #include <ship/controller/controldevice/controller/mapping/sdl/SDLButtonToButtonMapping.h>
 #include <ship/controller/controldevice/controller/mapping/sdl/SDLAxisDirectionToButtonMapping.h>
+#include <ship/controller/controldevice/controller/mapping/keyboard/KeyboardKeyToButtonMapping.h>
+#include <ship/controller/controldevice/controller/mapping/mouse/MouseButtonToButtonMapping.h>
+#include <fast/Fast3dWindow.h>
 #endif
 
 // BTN_A, BTN_CUP etc. (mesmo include usado pelo SohInputEditorWindow.cpp)
@@ -243,8 +246,7 @@ void DrawControlsGuide() {
     ImGui::EndGroup();
 }
 
-// ---------------------------------------------------------------- Controller layout preset
-// Liga os botões do gamepad (SDL, nomes do Xbox 360 / ViGEm) aos botões do N64 no layout "portadores" do remake.
+// ---------------------------------------------------------------- Layout presets (gamepad e PC)
 // Os vínculos são por porta (não por dispositivo), então não precisa de controle conectado para aplicar.
 #ifndef __WIIU__
 constexpr uint8_t kPresetPort = 0;   // porta 1 (aba "Link" do editor de controles)
@@ -261,21 +263,58 @@ struct PresetAxisBinding {
     SDL_GameControllerAxis axis;
 };
 
-// Edite aqui para trocar o layout.
+struct PresetKeyBinding {
+    CONTROLLERBUTTONS_T bitmask;
+    Ship::KbScancode key;
+};
+
+struct PresetMouseBinding {
+    CONTROLLERBUTTONS_T bitmask;
+    Ship::MouseBtn button;
+};
+
+// Gamepad (nomes do Xbox 360 / ViGEm). Edite aqui para trocar o layout.
 const PresetButtonBinding kPresetButtons[] = {
-    { BTN_CLEFT, SDL_CONTROLLER_BUTTON_LEFTSHOULDER },  // L  -> carrossel / item anterior
+    { BTN_CLEFT, SDL_CONTROLLER_BUTTON_LEFTSHOULDER },   // L  -> carrossel / item anterior
     { BTN_CRIGHT, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER }, // R  -> carrossel / próximo item
-    { BTN_B, SDL_CONTROLLER_BUTTON_Y },                 // Y  -> ataque
-    { BTN_CDOWN, SDL_CONTROLLER_BUTTON_X },             // X  -> pulo (ainda sem função)
-    { BTN_A, SDL_CONTROLLER_BUTTON_A },                 // A  -> ações
-    { BTN_L, SDL_CONTROLLER_BUTTON_B },                 // B  -> guardar
-    { BTN_R, SDL_CONTROLLER_BUTTON_BACK },              // -  -> mapa (ainda sem função)
-    { BTN_START, SDL_CONTROLLER_BUTTON_START },         // +  -> menu
+    { BTN_B, SDL_CONTROLLER_BUTTON_Y },                  // Y  -> ataque
+    { BTN_CDOWN, SDL_CONTROLLER_BUTTON_X },              // X  -> pulo (ainda sem função)
+    { BTN_A, SDL_CONTROLLER_BUTTON_A },                  // A  -> ações
+    { BTN_L, SDL_CONTROLLER_BUTTON_B },                  // B  -> guardar
+    { BTN_R, SDL_CONTROLLER_BUTTON_BACK },               // -  -> mapa (ainda sem função)
+    { BTN_START, SDL_CONTROLLER_BUTTON_START },          // +  -> menu
 };
 
 const PresetAxisBinding kPresetAxes[] = {
-    { BTN_Z, SDL_CONTROLLER_AXIS_TRIGGERLEFT },     // ZL -> mira / escudo
-    { BTN_CUP, SDL_CONTROLLER_AXIS_TRIGGERRIGHT },  // ZR -> usa o item em foco
+    { BTN_Z, SDL_CONTROLLER_AXIS_TRIGGERLEFT },    // ZL -> mira / escudo
+    { BTN_CUP, SDL_CONTROLLER_AXIS_TRIGGERRIGHT }, // ZR -> usa o item em foco
+};
+
+// PC (teclado + mouse). WASD continua sendo o analógico esquerdo (não é tocado). Edite aqui para trocar teclas.
+const PresetKeyBinding kPcKeys[] = {
+    { BTN_CUP, Ship::LUS_KB_F },        // F       -> usa o item em foco
+    { BTN_CLEFT, Ship::LUS_KB_Q },      // Q       -> carrossel / item anterior
+    { BTN_CRIGHT, Ship::LUS_KB_E },     // E       -> carrossel / próximo item
+    { BTN_A, Ship::LUS_KB_SPACE },      // Espaço  -> ações
+    { BTN_CDOWN, Ship::LUS_KB_SHIFT },  // Shift   -> pulo (ainda sem função)
+    { BTN_L, Ship::LUS_KB_R },          // R       -> guardar
+    { BTN_R, Ship::LUS_KB_M },          // M       -> mapa (ainda sem função)
+    { BTN_START, Ship::LUS_KB_ENTER },  // Enter   -> menu
+    { BTN_DLEFT, Ship::LUS_KB_1 },      // 1       -> slot D-Pad esquerda
+    { BTN_DDOWN, Ship::LUS_KB_2 },      // 2       -> slot D-Pad baixo
+    { BTN_DRIGHT, Ship::LUS_KB_3 },     // 3       -> slot D-Pad direita
+    { BTN_DUP, Ship::LUS_KB_C },        // C       -> Navi
+};
+
+const PresetMouseBinding kPcMouse[] = {
+    { BTN_B, Ship::LUS_MOUSE_BTN_LEFT }, // botão esquerdo -> ataque
+    { BTN_Z, Ship::LUS_MOUSE_BTN_RIGHT }, // botão direito  -> mira / escudo
+};
+
+// Botões que o preset de PC limpa (teclado e mouse) antes de recriar os vínculos.
+const CONTROLLERBUTTONS_T kPcClearedButtons[] = {
+    BTN_A,     BTN_B,      BTN_L,     BTN_R,      BTN_Z,      BTN_START, BTN_CUP,
+    BTN_CDOWN, BTN_CLEFT,  BTN_CRIGHT, BTN_DUP,   BTN_DDOWN,  BTN_DLEFT, BTN_DRIGHT,
 };
 
 void BindPresetMapping(const std::shared_ptr<Ship::ControllerButton>& button,
@@ -285,16 +324,35 @@ void BindPresetMapping(const std::shared_ptr<Ship::ControllerButton>& button,
     button->SaveButtonMappingIdsToConfig();
 }
 
+// Igual ao editor de controles: marca a porta como configurada pelo jogador. Os CVars definidos aqui e logo antes
+// dos vínculos são gravados em disco pelos Save() que cada SaveToConfig() faz.
+void MarkPresetPortConfigured() {
+#ifdef CVAR_PREFIX_CONTROLLERS
+    CVarSetInteger(CVAR_PREFIX_CONTROLLERS ".Port1.HasConfig", 1);
+#endif
+}
+
+// Mesmo cálculo dos callbacks de "Enable Mouse Controls" / "Auto Capture Mouse Input" do editor de controles.
+void RefreshMouseCapture() {
+    auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetRawInstance()->GetWindow());
+    if (wnd == nullptr) {
+        return;
+    }
+    const bool enabled =
+        CVarGetInteger(CVAR_SETTING("EnableMouse"), 0) != 0 && CVarGetInteger(CVAR_SETTING("AutoCaptureMouse"), 1) != 0;
+    wnd->SetAutoCaptureMouse(enabled);
+}
+
 bool ApplyRemakeControllerLayout() {
     auto controller = Ship::Context::GetRawInstance()->GetControlDeck()->GetControllerByPort(kPresetPort);
     if (controller == nullptr) {
         return false;
     }
 
-#ifdef CVAR_PREFIX_CONTROLLERS
-    // Igual ao editor de controles: marca a porta como configurada pelo jogador (os saves abaixo gravam em disco).
-    CVarSetInteger(CVAR_PREFIX_CONTROLLERS ".Port1.HasConfig", 1);
-#endif
+    MarkPresetPortConfigured();
+    // O analógico direito move a câmera: Free Look (os C já saem do analógico direito abaixo) e mira com ele.
+    CVarSetInteger(CVAR_SETTING("FreeLook.Enabled"), 1);
+    CVarSetInteger(CVAR_SETTING("Controls.RightStickAim"), 1);
 
     for (const PresetButtonBinding& b : kPresetButtons) {
         auto button = controller->GetButton(b.bitmask);
@@ -318,39 +376,68 @@ bool ApplyRemakeControllerLayout() {
     return true;
 }
 
-void DrawRemakeLayoutPreset() {
-    static double sAppliedMessageUntil = 0.0;
-    static bool sApplyFailed = false;
-    const char* popupId = "Apply Remake Layout##RemakeLayoutConfirm";
+bool ApplyPcControllerLayout() {
+    auto controller = Ship::Context::GetRawInstance()->GetControlDeck()->GetControllerByPort(kPresetPort);
+    if (controller == nullptr) {
+        return false;
+    }
 
-    ImGui::TextWrapped("Sets the gamepad bindings of port 1 to the layout used by Modern Item Switching "
-                       "(Xbox button names).");
+    MarkPresetPortConfigured();
+    // O mouse move a câmera em terceira pessoa (precisa do Free Look) e mira o escudo.
+    CVarSetInteger(CVAR_SETTING("EnableMouse"), 1);
+    CVarSetInteger(CVAR_SETTING("DisableThirdPersonMouse"), 0);
+    CVarSetInteger(CVAR_SETTING("FreeLook.Enabled"), 1);
 
-    if (ImGui::Button("Apply Remake Layout")) {
+    for (CONTROLLERBUTTONS_T bitmask : kPcClearedButtons) {
+        auto button = controller->GetButton(bitmask);
+        if (button == nullptr) {
+            continue;
+        }
+        button->ClearAllButtonMappingsForDeviceType(Ship::PhysicalDeviceType::Keyboard);
+        button->ClearAllButtonMappingsForDeviceType(Ship::PhysicalDeviceType::Mouse);
+    }
+
+    for (const PresetKeyBinding& k : kPcKeys) {
+        auto button = controller->GetButton(k.bitmask);
+        if (button == nullptr) {
+            continue;
+        }
+        BindPresetMapping(button, std::make_shared<Ship::KeyboardKeyToButtonMapping>(kPresetPort, k.bitmask, k.key));
+    }
+
+    for (const PresetMouseBinding& m : kPcMouse) {
+        auto button = controller->GetButton(m.bitmask);
+        if (button == nullptr) {
+            continue;
+        }
+        BindPresetMapping(button, std::make_shared<Ship::MouseButtonToButtonMapping>(kPresetPort, m.bitmask, m.button));
+    }
+
+    RefreshMouseCapture();
+    return true;
+}
+
+struct PresetUiState {
+    double messageUntil = 0.0;
+    bool failed = false;
+};
+
+// Texto + botão + popup de confirmação (Apply / Cancel, os dois fecham o popup).
+void DrawPresetPopup(const char* intro, const char* buttonLabel, const char* popupId, const char* details,
+                     const char* doneText, bool (*apply)(), PresetUiState& state) {
+    ImGui::TextWrapped("%s", intro);
+
+    if (ImGui::Button(buttonLabel)) {
         ImGui::OpenPopup(popupId);
     }
 
     if (ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("This replaces the gamepad (SDL) bindings of A, B, L, R, Z, Start and the four\n"
-                    "C buttons on port 1. The D-Pad, the sticks and keyboard bindings are not changed.");
-        ImGui::Spacing();
-        ImGui::BulletText("LT (ZL) -> Z");
-        ImGui::BulletText("RT (ZR) -> C-Up");
-        ImGui::BulletText("LB (L) -> C-Left");
-        ImGui::BulletText("RB (R) -> C-Right");
-        ImGui::BulletText("Y -> B");
-        ImGui::BulletText("X -> C-Down");
-        ImGui::BulletText("A -> A");
-        ImGui::BulletText("B -> L");
-        ImGui::BulletText("Back (-) -> R");
-        ImGui::BulletText("Start (+) -> Start");
-        ImGui::Spacing();
-        ImGui::Text("To undo it, use Set Defaults in the controller editor.");
+        ImGui::TextUnformatted(details);
         ImGui::Spacing();
 
         if (ImGui::Button("Apply")) {
-            sApplyFailed = !ApplyRemakeControllerLayout();
-            sAppliedMessageUntil = ImGui::GetTime() + 4.0;
+            state.failed = !apply();
+            state.messageUntil = ImGui::GetTime() + 4.0;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -360,13 +447,64 @@ void DrawRemakeLayoutPreset() {
         ImGui::EndPopup();
     }
 
-    if (ImGui::GetTime() < sAppliedMessageUntil) {
-        ImGui::TextWrapped(sApplyFailed ? "Could not find the controller on port 1." : "Remake layout applied.");
+    if (ImGui::GetTime() < state.messageUntil) {
+        ImGui::TextWrapped("%s", state.failed ? "Could not find the controller on port 1." : doneText);
     }
+}
+
+void DrawRemakeLayoutPreset() {
+    static PresetUiState sGamepadState;
+    static PresetUiState sPcState;
+
+    DrawPresetPopup("Gamepad: sets the bindings of port 1 to the layout used by Modern Item Switching (Xbox button "
+                    "names) and lets the right stick move the camera.",
+                    "Apply Remake Layout", "Apply Remake Layout##RemakeLayoutConfirm",
+                    "This replaces the gamepad (SDL) bindings of A, B, L, R, Z, Start and the four C buttons on\n"
+                    "port 1, and turns on Free Look and Right Stick Aiming. The D-Pad, the sticks and the\n"
+                    "keyboard bindings are not changed.\n"
+                    "\n"
+                    "  LT (ZL)  ->  Z\n"
+                    "  RT (ZR)  ->  C-Up\n"
+                    "  LB (L)  ->  C-Left\n"
+                    "  RB (R)  ->  C-Right\n"
+                    "  Y  ->  B\n"
+                    "  X  ->  C-Down\n"
+                    "  A  ->  A\n"
+                    "  B  ->  L\n"
+                    "  Back (-)  ->  R\n"
+                    "  Start (+)  ->  Start\n"
+                    "\n"
+                    "To undo the bindings, use Set Defaults in the controller editor.",
+                    "Remake layout applied.", ApplyRemakeControllerLayout, sGamepadState);
+
+    ImGui::Spacing();
+
+    DrawPresetPopup("Keyboard + mouse: WASD to move, mouse to move the camera, with a layout for one hand on the "
+                    "keyboard and one on the mouse.",
+                    "Apply PC Layout", "Apply PC Layout##PcLayoutConfirm",
+                    "This replaces the keyboard and mouse bindings of A, B, L, R, Z, Start, the four C buttons and\n"
+                    "the D-Pad on port 1, and turns on Mouse Controls and Free Look so the mouse moves the\n"
+                    "camera. WASD still moves Link. Gamepad bindings are not changed.\n"
+                    "\n"
+                    "  Left click  ->  B (attack)\n"
+                    "  Right click  ->  Z (aim / shield)\n"
+                    "  F  ->  C-Up (use the focused item)\n"
+                    "  Q / E  ->  C-Left / C-Right (item carousel)\n"
+                    "  Space  ->  A\n"
+                    "  Shift  ->  C-Down (jump, coming soon)\n"
+                    "  R  ->  L (put the sword away)\n"
+                    "  M  ->  R (map, coming soon)\n"
+                    "  Enter  ->  Start\n"
+                    "  1 / 2 / 3  ->  D-Pad Left / Down / Right (free item slots)\n"
+                    "  C  ->  D-Pad Up (Navi)\n"
+                    "\n"
+                    "Press F2 to toggle mouse capture. Mouse Controls and Free Look can be turned off again in\n"
+                    "Settings > Controls.",
+                    "PC layout applied.", ApplyPcControllerLayout, sPcState);
 }
 #else
 void DrawRemakeLayoutPreset() {
-    ImGui::TextWrapped("The controller layout preset is not available on this platform.");
+    ImGui::TextWrapped("The layout presets are not available on this platform.");
 }
 #endif
 
@@ -467,7 +605,7 @@ void SohMenu::AddMenuReDemake() {
             "Requires the controller bindings described in the project notes (ZR on C-Up, L on C-Left, "
             "R on C-Right)."));
 
-    AddWidget(controlsPath, "Controller Layout", WIDGET_SEPARATOR_TEXT)
+    AddWidget(controlsPath, "Layout Presets", WIDGET_SEPARATOR_TEXT)
         .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); });
 
     AddWidget(controlsPath, "RemakeLayoutPreset", WIDGET_CUSTOM)

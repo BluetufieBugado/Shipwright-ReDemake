@@ -24,8 +24,16 @@ s32 Player_InCsMode(PlayState* play);
 // Ordenação do carrossel: 0 = ordem dos slots do inventário, 1 = agrupado por tipo
 #define CVAR_REMAKE_SORT_NAME CVAR_ENHANCEMENT("RemakeControlsSortByType")
 
+// Pulo (X / Shift): 1 = ligado (padrão), 0 = desligado. Só vale com o modo moderno ligado.
+// Ainda não tem checkbox no menu; serve para desligar o pulo sem desligar o resto.
+#define CVAR_REMAKE_JUMP_NAME CVAR_ENHANCEMENT("RemakeControlsJump")
+
 // ---- HUD: item em foco no canto da tela (desenhado em RemakeControlsOverlay.cpp) ----
 static bool sCornerHidden = false;
+
+// ---- Pulo: o toque em X (C-baixo) é anotado aqui e consumido por z_player.c no mesmo frame ----
+static bool sJumpPressValid = false;
+static u32 sJumpPressFrame = 0;
 
 extern "C" int RemakeControls_IsEnabled(void) {
     return CVAR_REMAKE_CONTROLS_VALUE;
@@ -53,7 +61,7 @@ bool RemakeControls_IsCornerHidden() {
 //   ZR -> C-cima    : usar item em foco
 //   L  -> C-esquerdo: item anterior
 //   R  -> C-direito : próximo item
-//   X  -> C-baixo   : pulo (ainda não implementado, só é consumido)
+//   X  -> C-baixo   : pulo (ver RemakeControls_ConsumeJumpPress; o salto em si está em z_player.c)
 static const u16 kRemakeCarrierButtons = BTN_CUP | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
 
 #ifndef AGE_REQ_NONE
@@ -270,6 +278,16 @@ bool RemakeControls_IsSlotUsable(int slot) {
     return IsSlotUsableForCurrentAge(slot);
 }
 
+// Chamada por z_player.c quando o Link está livre para pular. Retorna 1 se X foi apertado neste frame.
+// O frame é conferido para um toque antigo (guardado enquanto o Link não podia pular) nunca disparar depois.
+extern "C" int RemakeControls_ConsumeJumpPress(PlayState* play) {
+    if (!sJumpPressValid) {
+        return 0;
+    }
+    sJumpPressValid = false;
+    return sJumpPressFrame == play->gameplayFrames;
+}
+
 // Chamada por Player_Update (z_player.c) na cópia local do input do Link.
 extern "C" void RemakeControls_ModifyPlayerInput(Input* input) {
     if (!CVAR_REMAKE_CONTROLS_VALUE) {
@@ -286,6 +304,12 @@ extern "C" void RemakeControls_ModifyPlayerInput(Input* input) {
 
     if (gPlayState == nullptr) {
         return;
+    }
+
+    // X (C-baixo) é o pulo: anota o toque antes de os portadores serem consumidos.
+    if (CHECK_BTN_ANY(input->press.button, BTN_CDOWN) && CVarGetInteger(CVAR_REMAKE_JUMP_NAME, 1)) {
+        sJumpPressValid = true;
+        sJumpPressFrame = gPlayState->gameplayFrames;
     }
 
     const bool useHeld = CHECK_BTN_ANY(input->cur.button, BTN_CUP);

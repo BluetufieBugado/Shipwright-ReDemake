@@ -399,6 +399,8 @@ static Input* sControlInput;
 // Remake controls (SoH): implemented in RemakeControls.cpp
 void RemakeControls_ModifyPlayerInput(Input* input);
 int RemakeControls_DpadEquipsActive(void);
+int RemakeControls_ConsumeJumpPress(PlayState* play);
+static s32 Player_TryRemakeJump(Player* this, PlayState* play);
 
 // .data
 
@@ -4162,6 +4164,15 @@ static s32 (*sActionHandlerFuncs[])(Player* this, PlayState* play) = {
     Player_ActionHandler_13,   // PLAYER_ACTION_HANDLER_13
 };
 
+// Pulo do modo moderno (X / Shift): só é tentado nas listas de ações em terra (andando, parado, mirando).
+// Ficam de fora a lista 10, a lista 11 (na água) e a de girar no lugar.
+static s32 Player_IsRemakeJumpHandlerList(s8* actionHandlerList) {
+    return (actionHandlerList == sActionHandlerListIdle) || (actionHandlerList == sActionHandlerList1) ||
+           (actionHandlerList == sActionHandlerList2) || (actionHandlerList == sActionHandlerList3) ||
+           (actionHandlerList == sActionHandlerList4) || (actionHandlerList == sActionHandlerList5) ||
+           (actionHandlerList == sActionHandlerList8) || (actionHandlerList == sActionHandlerList9);
+}
+
 /**
  * This function processes "Action Handler Lists".
  *
@@ -4201,6 +4212,10 @@ s32 Player_TryActionHandlerList(PlayState* play, Player* this, s8* actionHandler
 
         if (!(this->stateFlags1 & PLAYER_STATE1_START_CHANGING_HELD_ITEM) &&
             (Player_UpperAction_ChangeHeldItem != this->upperActionFunc)) {
+            if (Player_IsRemakeJumpHandlerList(actionHandlerList) && Player_TryRemakeJump(this, play)) {
+                return true;
+            }
+
             // Process all entries in the Action Handler List with a positive index
             while (*actionHandlerList >= 0) {
                 if (sActionHandlerFuncs[*actionHandlerList](this, play)) {
@@ -5684,6 +5699,36 @@ s32 func_8083A4A8(Player* this, PlayState* play) {
 
     func_80838940(this, anim, temp, play, NA_SE_VO_LI_AUTO_JUMP);
     this->av2.actionVar2 = 1;
+
+    return 1;
+}
+
+// Pulo do modo moderno (X / Shift). Reaproveita o salto de corrida do jogo (func_8083A4A8), que escolhe a
+// animação e a altura pela velocidade do Link: parado dá um pulo curto, correndo dá o salto longo.
+// Para ajustar a altura sem conhecer os valores dos IREG, mude o fator abaixo (1.0 = como o jogo original).
+#define REMAKE_JUMP_VELOCITY_SCALE 1.0f
+
+static s32 Player_TryRemakeJump(Player* this, PlayState* play) {
+    if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) ||
+        (this->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_SHIELDING | PLAYER_STATE1_CARRYING_ACTOR |
+                              PLAYER_STATE1_JUMPING)) ||
+        (this->stateFlags2 & PLAYER_STATE2_HOPPING) || (this->meleeWeaponState != 0)) {
+        return 0;
+    }
+
+    // Mesmas restrições de chão do rolamento e do salto lateral (Player_ActionHandler_10)
+    if ((play->roomCtx.curRoom.behaviorType1 == ROOM_BEHAVIOR_TYPE1_2) || (sFloorType == 7) ||
+        (SurfaceType_GetFloorEffect(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId) ==
+         FLOOR_EFFECT_1)) {
+        return 0;
+    }
+
+    if (!RemakeControls_ConsumeJumpPress(play)) {
+        return 0;
+    }
+
+    func_8083A4A8(this, play);
+    this->actor.velocity.y *= REMAKE_JUMP_VELOCITY_SCALE;
 
     return 1;
 }
