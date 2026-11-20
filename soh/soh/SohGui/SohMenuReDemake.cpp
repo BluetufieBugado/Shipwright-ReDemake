@@ -846,5 +846,37 @@ void SohMenu::AddMenuReDemake() {
         .PreFunc([](WidgetInfo& info) { info.isHidden = ModernControlsDisabled(); })
         .CustomFunction([](WidgetInfo& info) { DrawKeyboardGuide(); })
         .HideInSearch(true);
+
+    // ------------------------------------------------------------------ Graphics
+    AddSidebarEntry("ReDemake", "Graphics", 1);
+    WidgetPath gfxPath = { "ReDemake", "Graphics", SECTION_COLUMN_1 };
+
+    AddWidget(gfxPath, "Color Grading", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(gfxPath, "Remake Color Grading", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("RemakePostFx"))
+        .Options(CheckboxOptions().Tooltip(
+            "Adjusts contrast, saturation and tone of the finished image to get closer to the remake look: "
+            "richer colors, warm highlights and cool shadows. Only works with the OpenGL renderer "
+            "(Settings > Graphics > Renderer API). Keep MSAA off, it skips this effect when the window matches "
+            "the game resolution."));
+
+    AddWidget(gfxPath, "Contrast", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakePostFxContrast"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakePostFx"), 0); })
+        .Options(IntSliderOptions().Min(50).Max(150).DefaultValue(110).Format("%d%%").ShowButtons(true).Tooltip(
+            "100% is the original image."));
+
+    AddWidget(gfxPath, "Saturation", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakePostFxSaturation"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakePostFx"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(200).DefaultValue(120).Format("%d%%").ShowButtons(true).Tooltip(
+            "100% is the original image, 0% is black and white."));
+
+    AddWidget(gfxPath, "Warmth", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakePostFxWarmth"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakePostFx"), 0); })
+        .Options(IntSliderOptions().Min(-50).Max(50).DefaultValue(15).Format("%d").ShowButtons(true).Tooltip(
+            "Positive: warm highlights and cool shadows. Negative: the opposite. 0 is neutral."));
 }
 } // namespace SohGui
