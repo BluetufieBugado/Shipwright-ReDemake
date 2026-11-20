@@ -2,3 +2,7 @@
 	path = torch
 	url = https://github.com/HarbourMasters/Torch.git
 	branch = main
+[submodule "libultraship"]
+	path = libultraship
+	url = https://github.com/BluetufieBugado/libultraship-ReDemake.git
+	branch = redemake

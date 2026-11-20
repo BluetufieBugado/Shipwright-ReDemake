@@ -1,1 +1,2 @@
 * text=auto eol=lf
+libultraship/cmake/dependencies/patches/* -text
