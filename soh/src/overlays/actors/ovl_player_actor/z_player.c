@@ -5704,9 +5704,12 @@ s32 func_8083A4A8(Player* this, PlayState* play) {
 }
 
 // Pulo do modo moderno (X / Shift). Reaproveita o salto de corrida do jogo (func_8083A4A8), que escolhe a
-// animação e a altura pela velocidade do Link: parado dá um pulo curto, correndo dá o salto longo.
-// Para ajustar a altura sem conhecer os valores dos IREG, mude o fator abaixo (1.0 = como o jogo original).
+// animação pela velocidade do Link e a altura cresce com ela. Como a altura do jogo vale quase zero com o Link
+// parado ou devagar, há uma velocidade vertical mínima para o pulo sempre sair do chão.
+// REMAKE_JUMP_VELOCITY_SCALE multiplica a altura do jogo (1.0 = original); REMAKE_JUMP_MIN_VELOCITY é o piso.
+// Altura aproximada do pulo = velocidade ao quadrado / 2 (a gravidade do Link é 1.0 por frame).
 #define REMAKE_JUMP_VELOCITY_SCALE 1.0f
+#define REMAKE_JUMP_MIN_VELOCITY 7.0f
 
 static s32 Player_TryRemakeJump(Player* this, PlayState* play) {
     if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) ||
@@ -5729,6 +5732,9 @@ static s32 Player_TryRemakeJump(Player* this, PlayState* play) {
 
     func_8083A4A8(this, play);
     this->actor.velocity.y *= REMAKE_JUMP_VELOCITY_SCALE;
+    if (this->actor.velocity.y < (REMAKE_JUMP_MIN_VELOCITY * sWaterSpeedFactor)) {
+        this->actor.velocity.y = REMAKE_JUMP_MIN_VELOCITY * sWaterSpeedFactor;
+    }
 
     return 1;
 }
