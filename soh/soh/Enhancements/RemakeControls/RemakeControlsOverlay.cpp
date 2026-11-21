@@ -36,6 +36,21 @@ std::shared_ptr<Fast::Fast3dGui> GetFastGui() {
     return std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
 }
 
+// O jogo pode ser mostrado dentro de uma janela do ImGui (efeito grafico ligado, MSAA ou resolucao diferente da
+// janela). Nesse caso essa janela cobre a camada de FUNDO, entao o HUD usa a camada da FRENTE e some enquanto o
+// menu do SoH esta aberto (para continuar "atras do menu"). Sem a imagem, a camada de fundo continua servindo.
+// Devolve nullptr quando nao deve desenhar.
+ImDrawList* GetHudDrawList() {
+    auto window = Ship::Context::GetRawInstance()->GetWindow();
+    if (window->GetGfxFrameBuffer() == 0) {
+        return ImGui::GetBackgroundDrawList();
+    }
+    if (window->GetGui()->GetMenuOrMenubarVisible()) {
+        return nullptr;
+    }
+    return ImGui::GetForegroundDrawList();
+}
+
 // Registra o ícone do item no ImGui na primeira vez que ele é usado (mesma tabela do HUD: gItemIcons).
 ImTextureID GetItemTexture(int item) {
     static bool sRegistered[256] = {};
@@ -188,6 +203,11 @@ void DrawCornerItem() {
     // Camada de FUNDO do ImGui: fica por cima do jogo, mas atrás do menu do SoH (como o HUD de verdade)
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const float W = vp->Size.x;
+    // Escolhe a camada certa (ver GetHudDrawList)
+    dl = GetHudDrawList();
+    if (dl == nullptr) {
+        return;
+    }
     const float H = vp->Size.y;
     const float size = H * kSize;
     const ImVec2 mn(vp->Pos.x + W - H * kMarginRight - size, vp->Pos.y + H * kTop);
@@ -298,6 +318,11 @@ void DrawNaviIcon() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImDrawList* dl = ImGui::GetBackgroundDrawList(); // atrás do menu do SoH, como o resto do HUD
     const float W = vp->Size.x;
+    // Escolhe a camada certa (ver GetHudDrawList)
+    dl = GetHudDrawList();
+    if (dl == nullptr) {
+        return;
+    }
     const float H = vp->Size.y;
     // 1 unidade do HUD = H/240 pixels; x = 160 é o centro da tela
     const float unit = H / 240.0f;
