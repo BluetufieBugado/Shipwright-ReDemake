@@ -857,9 +857,8 @@ void SohMenu::AddMenuReDemake() {
         .CVar(CVAR_ENHANCEMENT("RemakePostFx"))
         .Options(CheckboxOptions().Tooltip(
             "Adjusts contrast, saturation and tone of the finished image to get closer to the remake look: "
-            "richer colors, warm highlights and cool shadows. Only works with the OpenGL renderer "
-            "(Settings > Graphics > Renderer API). Keep MSAA off, it skips this effect when the window matches "
-            "the game resolution."));
+            "richer colors, warm highlights and cool shadows. Works with the OpenGL and DirectX 11 renderers. "
+            "Keep MSAA off, the effect is skipped when MSAA is on."));
 
     AddWidget(gfxPath, "Contrast", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_ENHANCEMENT("RemakePostFxContrast"))
@@ -878,5 +877,25 @@ void SohMenu::AddMenuReDemake() {
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakePostFx"), 0); })
         .Options(IntSliderOptions().Min(-50).Max(50).DefaultValue(15).Format("%d").ShowButtons(true).Tooltip(
             "Positive: warm highlights and cool shadows. Negative: the opposite. 0 is neutral."));
+
+    AddWidget(gfxPath, "Bloom", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(gfxPath, "Remake Bloom", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("RemakeBloom"))
+        .Options(CheckboxOptions().Tooltip(
+            "Adds a soft glow around the brightest parts of the image (sky, lights, fire). Works with the "
+            "DirectX 11 renderer. Requires Remake Color Grading to be turned on. Keep MSAA off."));
+
+    AddWidget(gfxPath, "Bloom Intensity", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeBloomIntensity"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeBloom"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(100).DefaultValue(35).Format("%d%%").ShowButtons(true).Tooltip(
+            "How strong the glow is."));
+
+    AddWidget(gfxPath, "Bloom Threshold", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeBloomThreshold"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeBloom"), 0); })
+        .Options(IntSliderOptions().Min(30).Max(95).DefaultValue(70).Format("%d%%").ShowButtons(true).Tooltip(
+            "How bright a part of the image must be to glow. Lower values make more of the image glow."));
 }
 } // namespace SohGui
