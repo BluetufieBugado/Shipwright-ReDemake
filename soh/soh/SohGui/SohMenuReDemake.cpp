@@ -897,5 +897,14 @@ void SohMenu::AddMenuReDemake() {
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeBloom"), 0); })
         .Options(IntSliderOptions().Min(30).Max(95).DefaultValue(70).Format("%d%%").ShowButtons(true).Tooltip(
             "How bright a part of the image must be to glow. Lower values make more of the image glow."));
+
+    AddWidget(gfxPath, "Depth Test", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(gfxPath, "Show Depth Buffer (test)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("RemakeDepthDebug"))
+        .Options(CheckboxOptions().Tooltip(
+            "Developer test for the lighting work: shows the depth of the scene as grey levels (dark is near, "
+            "bright is far). Works with the DirectX 11 renderer. Requires Remake Color Grading to be turned on. "
+            "Keep MSAA off."));
 }
 } // namespace SohGui
