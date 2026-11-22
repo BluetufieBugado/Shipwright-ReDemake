@@ -903,8 +903,14 @@ void SohMenu::AddMenuReDemake() {
     AddWidget(gfxPath, "Show Depth Buffer (test)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("RemakeDepthDebug"))
         .Options(CheckboxOptions().Tooltip(
-            "Developer test for the lighting work: shows the depth of the scene as grey levels (dark is near, "
-            "bright is far). Works with the DirectX 11 renderer. Requires Remake Color Grading to be turned on. "
-            "Keep MSAA off."));
+            "Developer test for the lighting work: shows how far each pixel is from the camera as repeating "
+            "brightness ramps (one ramp per 100 game units, the colour changes every 1000). Works with the "
+            "DirectX 11 renderer. Requires Remake Color Grading to be turned on. Keep MSAA off."));
+
+    AddWidget(gfxPath, "Depth Test Projection", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeDepthDebugProj"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeDepthDebug"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(7).DefaultValue(0).Format("%d").ShowButtons(true).Tooltip(
+            "Which 3D camera setup the game loaded this frame to use for the distance ramps. Try 0 first."));
 }
 } // namespace SohGui
