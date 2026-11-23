@@ -898,6 +898,27 @@ void SohMenu::AddMenuReDemake() {
         .Options(IntSliderOptions().Min(30).Max(95).DefaultValue(70).Format("%d%%").ShowButtons(true).Tooltip(
             "How bright a part of the image must be to glow. Lower values make more of the image glow."));
 
+    AddWidget(gfxPath, "Point Lights", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(gfxPath, "Remake Point Lights (test)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("RemakeLights"))
+        .Options(CheckboxOptions().Tooltip(
+            "Experimental: adds warm light around torches and other lights that are lit, using the depth buffer. "
+            "The light does not cast shadows. Works with the DirectX 11 renderer. Requires Remake Color Grading "
+            "to be turned on. Keep MSAA off. Turn off Show Depth Buffer (test) to see it."));
+
+    AddWidget(gfxPath, "Light Intensity", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeLightsIntensity"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeLights"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(300).DefaultValue(100).Format("%d%%").ShowButtons(true).Tooltip(
+            "How strong the added light is."));
+
+    AddWidget(gfxPath, "Light Range", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeLightsRange"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeLights"), 0); })
+        .Options(IntSliderOptions().Min(50).Max(500).DefaultValue(200).Format("%d%%").ShowButtons(true).Tooltip(
+            "How far the light reaches, compared to the size the game gives each light."));
+
     AddWidget(gfxPath, "Depth Test", WIDGET_SEPARATOR_TEXT);
 
     AddWidget(gfxPath, "Show Depth Buffer (test)", WIDGET_CVAR_CHECKBOX)

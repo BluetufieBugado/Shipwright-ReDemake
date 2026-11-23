@@ -3104,6 +3104,55 @@ static void ReDemake_LogLights(PlayState* play) {
     LUSLOG_INFO("ReDemake lights: %d lights in the list", (int)count);
 }
 
+// ReDemake: luzes de ponto (tochas, Navi) para o efeito de luz do pos-processamento (libultraship, interpreter.cpp).
+// Cada luz = 8 floats: x, y, z (espaco da camera), raio, r, g, b (0 a 1), sem uso.
+extern float gReDemakeLightData[8][8];
+extern int gReDemakeLightCount;
+
+static void ReDemake_SubmitLights(PlayState* play) {
+    LightNode* node;
+    MtxF viewF;
+    Vec3f worldPos;
+    Vec3f viewPos;
+    f32 viewW;
+    s32 count = 0;
+
+    if (!CVarGetInteger("gEnhancements.RemakeLights", 0)) {
+        gReDemakeLightCount = 0;
+        return;
+    }
+
+    Matrix_MtxToMtxF(&play->view.viewing, &viewF);
+
+    node = play->lightCtx.listHead;
+    while ((node != NULL) && (count < 8)) {
+        LightInfo* info = node->info;
+
+        // So luzes de ponto acesas (raio positivo e cor que nao seja preta)
+        if ((info != NULL) && (info->type != LIGHT_DIRECTIONAL) && (info->params.point.radius > 0) &&
+            ((info->params.point.color[0] | info->params.point.color[1] | info->params.point.color[2]) != 0)) {
+            worldPos.x = info->params.point.x;
+            worldPos.y = info->params.point.y;
+            worldPos.z = info->params.point.z;
+            SkinMatrix_Vec3fMtxFMultXYZW(&viewF, &worldPos, &viewPos, &viewW);
+
+            gReDemakeLightData[count][0] = viewPos.x;
+            gReDemakeLightData[count][1] = viewPos.y;
+            gReDemakeLightData[count][2] = viewPos.z;
+            gReDemakeLightData[count][3] = (f32)info->params.point.radius;
+            gReDemakeLightData[count][4] = info->params.point.color[0] / 255.0f;
+            gReDemakeLightData[count][5] = info->params.point.color[1] / 255.0f;
+            gReDemakeLightData[count][6] = info->params.point.color[2] / 255.0f;
+            gReDemakeLightData[count][7] = 0.0f;
+            count++;
+        }
+
+        node = node->next;
+    }
+
+    gReDemakeLightCount = count;
+}
+
 void Actor_DrawAll(PlayState* play, ActorContext* actorCtx) {
     s32 invisibleActorCounter;
     Actor* invisibleActors[INVISIBLE_ACTOR_MAX];
@@ -3112,6 +3161,7 @@ void Actor_DrawAll(PlayState* play, ActorContext* actorCtx) {
     s32 i;
 
     ReDemake_LogLights(play);
+    ReDemake_SubmitLights(play);
 
     invisibleActorCounter = 0;
 
