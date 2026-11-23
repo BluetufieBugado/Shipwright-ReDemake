@@ -3044,12 +3044,60 @@ s32 Ship_CalcShouldDrawAndUpdate(PlayState* play, Actor* actor, Vec3f* projected
 }
 // #endregion
 
+// ReDemake: log temporario das luzes de ponto (so roda com o teste de profundidade ligado)
+static void ReDemake_LogLights(PlayState* play) {
+    static s32 sFrameCounter = 0;
+    LightNode* node;
+    Player* player;
+    s32 count = 0;
+
+    if (!CVarGetInteger("gEnhancements.RemakeDepthDebug", 0)) {
+        return;
+    }
+
+    sFrameCounter++;
+    if ((sFrameCounter % 100) != 1) {
+        return;
+    }
+
+    player = GET_PLAYER(play);
+    LUSLOG_INFO("ReDemake lights: scene %d, player at (%d, %d, %d)", (int)play->sceneNum,
+                (int)player->actor.world.pos.x, (int)player->actor.world.pos.y, (int)player->actor.world.pos.z);
+
+    node = play->lightCtx.listHead;
+    while ((node != NULL) && (count < 32)) {
+        LightInfo* info = node->info;
+
+        if (info != NULL) {
+            if (info->type == LIGHT_DIRECTIONAL) {
+                LUSLOG_INFO("ReDemake lights: [%d] directional dir=(%d, %d, %d) color=(%d, %d, %d)", (int)count,
+                            (int)info->params.dir.x, (int)info->params.dir.y, (int)info->params.dir.z,
+                            (int)info->params.dir.color[0], (int)info->params.dir.color[1],
+                            (int)info->params.dir.color[2]);
+            } else {
+                LUSLOG_INFO("ReDemake lights: [%d] point type=%d (0=noglow, 2=glow) pos=(%d, %d, %d) "
+                            "color=(%d, %d, %d) radius=%d",
+                            (int)count, (int)info->type, (int)info->params.point.x, (int)info->params.point.y,
+                            (int)info->params.point.z, (int)info->params.point.color[0],
+                            (int)info->params.point.color[1], (int)info->params.point.color[2],
+                            (int)info->params.point.radius);
+            }
+        }
+
+        count++;
+        node = node->next;
+    }
+    LUSLOG_INFO("ReDemake lights: %d lights in the list", (int)count);
+}
+
 void Actor_DrawAll(PlayState* play, ActorContext* actorCtx) {
     s32 invisibleActorCounter;
     Actor* invisibleActors[INVISIBLE_ACTOR_MAX];
     ActorListEntry* actorListEntry;
     Actor* actor;
     s32 i;
+
+    ReDemake_LogLights(play);
 
     invisibleActorCounter = 0;
 
