@@ -3049,6 +3049,10 @@ static void ReDemake_LogLights(PlayState* play) {
     static s32 sFrameCounter = 0;
     LightNode* node;
     Player* player;
+    MtxF viewF;
+    Vec3f worldPos;
+    Vec3f viewPos;
+    f32 viewW;
     s32 count = 0;
 
     if (!CVarGetInteger("gEnhancements.RemakeDepthDebug", 0)) {
@@ -3060,9 +3064,15 @@ static void ReDemake_LogLights(PlayState* play) {
         return;
     }
 
+    // matriz da camera (mundo -> visao), a mesma usada para desenhar o quadro
+    Matrix_MtxToMtxF(&play->view.viewing, &viewF);
+
     player = GET_PLAYER(play);
-    LUSLOG_INFO("ReDemake lights: scene %d, player at (%d, %d, %d)", (int)play->sceneNum,
-                (int)player->actor.world.pos.x, (int)player->actor.world.pos.y, (int)player->actor.world.pos.z);
+    SkinMatrix_Vec3fMtxFMultXYZW(&viewF, &player->actor.world.pos, &viewPos, &viewW);
+    LUSLOG_INFO("ReDemake lights: scene %d, player at (%d, %d, %d), player in view space (%d, %d, %d), eye (%d, %d, %d)",
+                (int)play->sceneNum, (int)player->actor.world.pos.x, (int)player->actor.world.pos.y,
+                (int)player->actor.world.pos.z, (int)viewPos.x, (int)viewPos.y, (int)viewPos.z,
+                (int)play->view.eye.x, (int)play->view.eye.y, (int)play->view.eye.z);
 
     node = play->lightCtx.listHead;
     while ((node != NULL) && (count < 32)) {
@@ -3075,12 +3085,16 @@ static void ReDemake_LogLights(PlayState* play) {
                             (int)info->params.dir.color[0], (int)info->params.dir.color[1],
                             (int)info->params.dir.color[2]);
             } else {
+                worldPos.x = info->params.point.x;
+                worldPos.y = info->params.point.y;
+                worldPos.z = info->params.point.z;
+                SkinMatrix_Vec3fMtxFMultXYZW(&viewF, &worldPos, &viewPos, &viewW);
                 LUSLOG_INFO("ReDemake lights: [%d] point type=%d (0=noglow, 2=glow) pos=(%d, %d, %d) "
-                            "color=(%d, %d, %d) radius=%d",
+                            "view=(%d, %d, %d) color=(%d, %d, %d) radius=%d",
                             (int)count, (int)info->type, (int)info->params.point.x, (int)info->params.point.y,
-                            (int)info->params.point.z, (int)info->params.point.color[0],
-                            (int)info->params.point.color[1], (int)info->params.point.color[2],
-                            (int)info->params.point.radius);
+                            (int)info->params.point.z, (int)viewPos.x, (int)viewPos.y, (int)viewPos.z,
+                            (int)info->params.point.color[0], (int)info->params.point.color[1],
+                            (int)info->params.point.color[2], (int)info->params.point.radius);
             }
         }
 
