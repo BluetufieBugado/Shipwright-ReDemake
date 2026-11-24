@@ -1,8 +1,26 @@
+<img width="480" alt="Logo Zelda Ocarina of Time ReDemake" src="https://github.com/user-attachments/assets/a2acba5b-8980-43ac-9aa9-dd95bd5fd52e" />
+
 # What is this project?
 
 This is a small fork of the original [*Ship of Harkinian*](https://github.com/HarbourMasters/Shipwright), created with the goal of bringing elements of the remake experience to the classic version already available on PC—offering a refreshed experience, albeit with more limited features.
 
 The intention is not to recreate the remake entirely, but rather to incorporate specific features exclusive to the remake and introduce a more modern feel to the classic game.
+
+## What is the current focus of the work? (11/24/26)
+
+The rendering system is being reworked to introduce modern visual effects—such as color correction, bloom, and true dynamic lighting—into the game. So far, these three features have already been implemented, and I am currently exploring the possibility of adding realistic shadows, similar to those found in modern games. It is an ambitious step, but one I am keen to attempt—and that is exactly what I have been working on. Furthermore, this process has helped me gain a better understanding of the game’s rendering engine.
+
+
+<img width="480" alt="Hyrule Field com efeitos ligados" src="https://github.com/user-attachments/assets/0a0e65a3-0175-4a7d-92ba-e96d507fc7b6" />
+
+### What has already been implemented in this phase?
+
+Color correction ✔
+
+Bloom ✔
+
+Dynamic light points (the lights actually illuminate the environment and objects, rather than being just static points.) ✔
+
 
 ## What is currently working?
 
@@ -55,3 +73,20 @@ To adjust the arrangement of items, press the button on your controller that cor
 ❌ Smoother controls
 
 ❌ Maps and environments remain identical to the original game and require reworking
+
+❌ Ragdoll physics (not sure if this might be added in the future; it remains a possibility—a "maybe")
+
+## Known issues
+
+The tests conducted so far, which modify aspects of the renderer, were performed using DirectX11; consequently, bugs or inconsistencies may arise when switching to OpenGL. One example of this is the “Link” feature in the equipment menu, which disappears entirely when using OpenGL—a flaw that should be addressed in future versions.
+
+The graphical changes aimed at improving the game's quality are experimental and entirely new. It has not yet been determined whether these might negatively impact the game at some point; the same applies to other additional mechanics that have been introduced. However, as far as I am aware, there do not appear to be any issues at this time.
+
+Furthermore, all testing was carried out exclusively on the Windows version, as that is the operating system I use. If you encounter any problems on Linux or macOS, I would appreciate your help in reporting them via the issue tracker, and I will do my best to fix them as quickly as possible!
+
+## Android? 
+
+An Android version is a strong possibility; it will likely be developed in a separate repository, building upon the work of [Linkzenic](https://github.com/linkzenic/Shipwright-Ports).
+
+I am not yet familiar with the code structure of the Android version of SoH, but if it follows the same logic, porting the features found in the "Enhancements" folder here might not be too difficult—though only time will tell. The renderer may well be the biggest challenge, as it almost certainly required some adaptation for that platform; that will be a separate task. My intention is to aim for a simultaneous release: once the current build reaches a satisfactory state, I will work on the Android version so that it can be launched alongside the Windows, Mac, and Linux versions.
+
