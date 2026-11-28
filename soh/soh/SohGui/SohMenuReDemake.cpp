@@ -919,6 +919,36 @@ void SohMenu::AddMenuReDemake() {
         .Options(IntSliderOptions().Min(50).Max(500).DefaultValue(200).Format("%d%%").ShowButtons(true).Tooltip(
             "How far the light reaches, compared to the size the game gives each light."));
 
+    AddWidget(gfxPath, "Shadows", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(gfxPath, "Show Shadow Mask (test)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("RemakeShadowDebug"))
+        .Options(CheckboxOptions().Tooltip(
+            "Developer test for the shadow work: replaces the image with a map of the light from torches and Navi. "
+            "Grey or white is light that reaches the pixel, red is light that is blocked by something in the way. "
+            "Requires Remake Point Lights and Remake Color Grading to be turned on. DirectX 11 renderer. Keep MSAA off."));
+
+    AddWidget(gfxPath, "Shadow Steps", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeShadowSteps"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeShadowDebug"), 0); })
+        .Options(IntSliderOptions().Min(4).Max(32).DefaultValue(12).Format("%d").ShowButtons(true).Tooltip(
+            "How many points are checked on the way from each pixel to the light. More steps find thinner objects "
+            "but cost more performance."));
+
+    AddWidget(gfxPath, "Shadow Bias", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeShadowBias"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeShadowDebug"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(50).DefaultValue(6).Format("%d").ShowButtons(true).Tooltip(
+            "How far in front of a surface something must be (in game units) to count as blocking. Raise it if "
+            "surfaces shadow themselves (red spots on flat walls and floors)."));
+
+    AddWidget(gfxPath, "Shadow Thickness", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("RemakeShadowThickness"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("RemakeShadowDebug"), 0); })
+        .Options(IntSliderOptions().Min(10).Max(300).DefaultValue(60).Format("%d").ShowButtons(true).Tooltip(
+            "How deep an object can be (in game units) and still block the light. Low values leak light behind "
+            "thick walls, high values make far away objects cast shadows by mistake."));
+
     AddWidget(gfxPath, "Depth Test", WIDGET_SEPARATOR_TEXT);
 
     AddWidget(gfxPath, "Show Depth Buffer (test)", WIDGET_CVAR_CHECKBOX)
